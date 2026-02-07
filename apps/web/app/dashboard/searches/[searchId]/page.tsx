@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -15,10 +15,13 @@ import { MarketStats } from "@/components/market-stats";
 import { VehicleCard } from "@/components/vehicle-card";
 import { VehicleTable } from "@/components/vehicle-table";
 import { Download, RefreshCw, LayoutGrid, List } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function SearchResultsPage() {
   const params = useParams();
   const searchId = params.searchId as string;
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -38,7 +41,33 @@ export default function SearchResultsPage() {
   const handleTriggerScrape = async () => {
     setIsTriggering(true);
     try {
-      await fetch(`/api/searches/${searchId}/trigger`, { method: "POST" });
+      const res = await fetch(`/api/searches/${searchId}/trigger`, { method: "POST" });
+      const body = await res.json();
+
+      if (!res.ok) {
+        toast({
+          title: "Scrape failed",
+          description: body.error || body.detail || "Unknown error",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      toast({
+        title: "Scrape started",
+        description: "Fetching new listings in the background. Results will appear shortly.",
+      });
+
+      // Refetch data after a delay to pick up new results
+      setTimeout(() => queryClient.invalidateQueries({ queryKey: ["search", searchId] }), 10000);
+      setTimeout(() => queryClient.invalidateQueries({ queryKey: ["search", searchId] }), 30000);
+      setTimeout(() => queryClient.invalidateQueries({ queryKey: ["search", searchId] }), 60000);
+    } catch (err) {
+      toast({
+        title: "Connection error",
+        description: "Could not reach the scraping worker. Check WORKER_URL configuration.",
+        variant: "destructive",
+      });
     } finally {
       setIsTriggering(false);
     }
