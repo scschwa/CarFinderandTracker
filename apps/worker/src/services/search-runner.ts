@@ -3,6 +3,10 @@ import { ScrapedListing, SearchParams } from '../scrapers/types';
 import { scrapeBaT } from '../scrapers/bat';
 import { scrapeCarsAndBids } from '../scrapers/carsandbids';
 import { scrapeAutotrader } from '../scrapers/autotrader';
+import { scrapeHemmings } from '../scrapers/hemmings';
+import { scrapePcarmarket } from '../scrapers/pcarmarket';
+import { scrapeHagerty } from '../scrapers/hagerty';
+import { scrapeAutohunter } from '../scrapers/autohunter';
 import { recordPrice, getPreviousPrice } from './price-recorder';
 import { detectDelistedListings, detectCrossListings } from './vehicle-tracker';
 import { sendNotifications } from './notifier';
@@ -34,6 +38,10 @@ export async function runSearchScrape(search: {
     { name: 'bat', fn: () => scrapeBaT(params) },
     { name: 'carsandbids', fn: () => scrapeCarsAndBids(params) },
     { name: 'autotrader', fn: () => scrapeAutotrader(params) },
+    { name: 'hemmings', fn: () => scrapeHemmings(params) },
+    { name: 'pcarmarket', fn: () => scrapePcarmarket(params) },
+    { name: 'hagerty', fn: () => scrapeHagerty(params) },
+    { name: 'autohunter', fn: () => scrapeAutohunter(params) },
   ];
 
   for (const scraper of scrapers) {
