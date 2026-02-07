@@ -1,8 +1,8 @@
 import { ScrapedListing, SearchParams } from './types';
 import { withRetry, randomDelay } from '../utils/retry';
 
-// Autotrader uses Playwright for heavy JS rendering + bot detection
-// This scraper requires playwright to be installed in the worker environment
+// Autotrader uses Akamai Bot Manager — requires stealth plugin to bypass
+// Dependencies: playwright-extra + puppeteer-extra-plugin-stealth
 
 function buildSearchUrl(params: SearchParams): string {
   const makeSlug = params.make.toLowerCase().replace(/\s+/g, '-');
@@ -23,24 +23,48 @@ export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedLis
 
   let browser;
   try {
-    // Dynamic import to avoid loading playwright when not scraping autotrader
-    const { chromium } = await import('playwright');
+    // Use playwright-extra with stealth plugin to bypass Akamai bot detection
+    const { chromium } = await import('playwright-extra');
+    const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+
+    chromium.use(StealthPlugin());
 
     browser = await chromium.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled',
+      ],
     });
 
     const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       viewport: { width: 1920, height: 1080 },
+      locale: 'en-US',
+      timezoneId: 'America/New_York',
     });
 
     const page = await context.newPage();
 
+    // Set extra headers to look more like a real browser
+    await page.setExtraHTTPHeaders({
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Upgrade-Insecure-Requests': '1',
+    });
+
     await withRetry(async () => {
       await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 });
     });
+
+    // Give the page extra time for JS rendering
+    await randomDelay(3000, 5000);
 
     // Try multiple selectors — Autotrader may have changed their markup
     const selectorStrategies = [
@@ -81,10 +105,12 @@ export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedLis
       const hasCaptcha = bodyPreview.toLowerCase().includes('captcha') ||
         bodyPreview.toLowerCase().includes('verify') ||
         bodyPreview.toLowerCase().includes('robot') ||
-        bodyPreview.toLowerCase().includes('challenge');
+        bodyPreview.toLowerCase().includes('challenge') ||
+        bodyPreview.toLowerCase().includes('unavailable') ||
+        bodyPreview.toLowerCase().includes('incident');
 
       if (hasCaptcha) {
-        console.log(`[Autotrader] Bot detection/captcha page detected`);
+        console.log(`[Autotrader] Bot detection/captcha page detected — stealth plugin may need updating`);
       }
 
       // Last resort: try to find any links to vehicle detail pages
@@ -95,7 +121,6 @@ export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedLis
         for (const link of vehicleLinks) {
           try {
             const href = await link.evaluate((el: Element) => (el as HTMLAnchorElement).href);
-            // Get the closest parent that looks like a card
             const cardText = await link.evaluate((el: Element) => {
               const card = el.closest('div[class*="listing"], div[class*="inventory"], div[class*="vehicle"], section, article') || el.parentElement?.parentElement;
               return card?.textContent?.trim() || el.textContent?.trim() || '';
@@ -103,35 +128,28 @@ export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedLis
 
             if (!href || !cardText) continue;
 
-            // Extract title — typically first meaningful text
             const titleMatch = cardText.match(/(\d{4}\s+\w[\w\s]*(?:AWD|RWD|FWD|4WD)?)/i);
             const title = titleMatch ? titleMatch[1].trim() : cardText.split('\n')[0]?.trim() || '';
-
             if (!title) continue;
 
-            // Extract price
             const priceMatch = cardText.match(/\$\s*([\d,]+)/);
             const price = priceMatch ? parseInt(priceMatch[1].replace(/,/g, '')) * 100 : 0;
 
-            // Extract mileage
             const mileageMatch = cardText.match(/([\d,]+)\s*mi/i);
             const mileage = mileageMatch ? parseInt(mileageMatch[1].replace(/,/g, '')) : null;
 
-            // Filter by year
             const yearMatch = title.match(/\b(19|20)\d{2}\b/);
             if (yearMatch) {
               const year = parseInt(yearMatch[0]);
               if (year < params.year_min || year > params.year_max) continue;
             }
 
-            // Get image from sibling elements
             const imageUrl = await link.evaluate((el: Element) => {
               const card = el.closest('div[class*="listing"], div[class*="inventory"], div[class*="vehicle"], section, article') || el.parentElement?.parentElement;
               const img = card?.querySelector('img');
               return img?.src || null;
             });
 
-            // Deduplicate by URL
             if (listings.some(l => l.url === href)) continue;
 
             listings.push({
@@ -199,14 +217,12 @@ export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedLis
               (el: Element) => (el as HTMLImageElement).src
             ).catch(() => null);
 
-            // Filter by year
             const yearMatch = title.match(/\b(19|20)\d{2}\b/);
             if (yearMatch) {
               const year = parseInt(yearMatch[0]);
               if (year < params.year_min || year > params.year_max) continue;
             }
 
-            // Deduplicate
             if (listings.some(l => l.url === listingUrl)) continue;
 
             listings.push({
@@ -228,7 +244,6 @@ export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedLis
 
         pagesScraped++;
 
-        // Try to go to next page
         if (pagesScraped < maxPages) {
           const nextButton = await page.$('button[aria-label="Next"], [data-cmp="nextPage"], a[aria-label="Next"]');
           if (nextButton) {
