@@ -110,6 +110,7 @@ The worker will start and, if `RUN_ON_START=true`, immediately scrape all active
    - `RESEND_API_KEY`
    - `WORKER_API_KEY` (generate a strong random secret, e.g. `openssl rand -hex 32`)
    - `RUN_ON_START=false` (let it run on its cron schedule)
+   - `PROXY_URL` (optional, required for Autotrader — e.g. `http://user:pass@smartproxy.crawlbase.com:8012`)
 6. Deploy
 7. After deploying, note the worker's public URL from Railway (Settings > Networking > Public Networking). Add this as `WORKER_URL` in your Vercel env vars.
 
@@ -162,4 +163,4 @@ The worker runs a cron job at **7:00 AM ET daily** to scrape all active searches
 | `WORKER_URL` | Web | Public URL of the Railway worker (e.g. `https://your-worker.railway.app`) |
 | `WORKER_API_KEY` | Web + Worker | Shared secret for authenticating web-to-worker requests |
 | `RUN_ON_START` | Worker | Set to "true" to run scraping immediately on worker start |
-| `PROXY_LIST` | Worker | Optional comma-separated list of proxy URLs for scraping |
+| `PROXY_URL` | Worker | Residential proxy URL for Autotrader (e.g. `http://user:pass@smartproxy.crawlbase.com:8012`) |

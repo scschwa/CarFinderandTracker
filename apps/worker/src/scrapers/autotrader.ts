@@ -1,8 +1,9 @@
 import { ScrapedListing, SearchParams } from './types';
 import { withRetry, randomDelay } from '../utils/retry';
 
-// Autotrader uses Akamai Bot Manager — requires stealth plugin to bypass
+// Autotrader uses Akamai Bot Manager — requires stealth plugin + residential proxy
 // Dependencies: playwright-extra + puppeteer-extra-plugin-stealth
+// Env: PROXY_URL (e.g. http://user:pass@smartproxy.crawlbase.com:8012)
 
 function buildSearchUrl(params: SearchParams): string {
   const makeSlug = params.make.toLowerCase().replace(/\s+/g, '-');
@@ -15,9 +16,34 @@ function buildSearchUrl(params: SearchParams): string {
     `&isNewSearch=true&marketExtension=include&showAccelerateBanner=false&sortBy=relevance&numRecords=25`;
 }
 
+function parseProxyUrl(): { server: string; username?: string; password?: string } | null {
+  const proxyUrl = process.env.PROXY_URL;
+  if (!proxyUrl) return null;
+
+  try {
+    const parsed = new URL(proxyUrl);
+    const server = `${parsed.protocol}//${parsed.hostname}:${parsed.port}`;
+    const result: { server: string; username?: string; password?: string } = { server };
+    if (parsed.username) result.username = decodeURIComponent(parsed.username);
+    if (parsed.password) result.password = decodeURIComponent(parsed.password);
+    return result;
+  } catch {
+    console.error(`[Autotrader] Invalid PROXY_URL format: ${proxyUrl}`);
+    return null;
+  }
+}
+
 export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedListing[]> {
   const url = buildSearchUrl(params);
   console.log(`[Autotrader] Scraping: ${url}`);
+
+  const proxy = parseProxyUrl();
+  if (!proxy) {
+    console.log(`[Autotrader] No PROXY_URL configured — Autotrader requires a residential proxy to bypass Akamai bot detection. Skipping.`);
+    return [];
+  }
+
+  console.log(`[Autotrader] Using proxy: ${proxy.server}`);
 
   const listings: ScrapedListing[] = [];
 
@@ -31,6 +57,7 @@ export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedLis
 
     browser = await chromium.launch({
       headless: true,
+      proxy: { server: proxy.server, username: proxy.username, password: proxy.password },
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -60,7 +87,7 @@ export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedLis
     });
 
     await withRetry(async () => {
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 });
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
     });
 
     // Give the page extra time for JS rendering
@@ -110,7 +137,7 @@ export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedLis
         bodyPreview.toLowerCase().includes('incident');
 
       if (hasCaptcha) {
-        console.log(`[Autotrader] Bot detection/captcha page detected — stealth plugin may need updating`);
+        console.log(`[Autotrader] Bot detection page detected — proxy may not be residential or may be rate-limited`);
       }
 
       // Last resort: try to find any links to vehicle detail pages
