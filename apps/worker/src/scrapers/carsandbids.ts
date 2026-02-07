@@ -7,18 +7,18 @@ function buildSearchUrl(params: SearchParams): string {
   return `https://carsandbids.com/search?q=${encodeURIComponent(query)}`;
 }
 
-/** Check if card text indicates a completed/closed auction */
+/** Check if card text indicates a completed/closed auction.
+ *  Uses specific phrases to avoid false positives from generic words
+ *  like "sold" or "ended" appearing in non-status parts of the card. */
 function isAuctionClosed(text: string): boolean {
   const lower = text.toLowerCase();
   return (
-    lower.includes('sold') ||
-    lower.includes('completed') ||
-    lower.includes('ended') ||
+    /sold\s+for\s+\$/.test(lower) ||
+    /bid\s+to\s+\$/.test(lower) ||
     lower.includes('final bid') ||
-    lower.includes('closed') ||
     lower.includes('no sale') ||
     lower.includes('reserve not met') ||
-    lower.includes('bid to $') // C&B shows "Bid to $X" for completed auctions
+    lower.includes('auction ended')
   );
 }
 

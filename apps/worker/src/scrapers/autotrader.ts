@@ -1,6 +1,6 @@
 import { ScrapedListing, SearchParams } from './types';
 import { withRetry, randomDelay } from '../utils/retry';
-import { extractVins } from '../utils/vin-extractor';
+import { extractVins, extractVinsInPlace } from '../utils/vin-extractor';
 
 // Autotrader uses Akamai Bot Manager — requires either:
 // 1. Bright Data Scraping Browser (recommended): set BRIGHT_DATA_BROWSER_WS
@@ -318,8 +318,13 @@ export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedLis
       }
     }
 
-    // Extract VINs from detail pages (opens new tabs, max 10)
-    await extractVins(page.context(), listings, 'Autotrader');
+    // Extract VINs from detail pages
+    // CDP connections (Bright Data) don't support context.newPage(), so reuse the existing page
+    if (sbWs) {
+      await extractVinsInPlace(page, listings, 'Autotrader');
+    } else {
+      await extractVins(page.context(), listings, 'Autotrader');
+    }
 
     await browser.close();
     browser = null;
