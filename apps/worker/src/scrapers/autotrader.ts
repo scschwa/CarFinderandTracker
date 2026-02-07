@@ -1,9 +1,9 @@
 import { ScrapedListing, SearchParams } from './types';
 import { withRetry, randomDelay } from '../utils/retry';
 
-// Autotrader uses Akamai Bot Manager — requires stealth plugin + residential proxy
-// Dependencies: playwright-extra + puppeteer-extra-plugin-stealth
-// Env: PROXY_URL (e.g. http://user:pass@smartproxy.crawlbase.com:8012)
+// Autotrader uses Akamai Bot Manager — requires either:
+// 1. Bright Data Scraping Browser (recommended): set BRIGHT_DATA_BROWSER_WS
+// 2. Stealth plugin + residential proxy (fallback): set PROXY_URL
 
 function buildSearchUrl(params: SearchParams): string {
   const makeSlug = params.make.toLowerCase().replace(/\s+/g, '-');
@@ -37,64 +37,75 @@ export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedLis
   const url = buildSearchUrl(params);
   console.log(`[Autotrader] Scraping: ${url}`);
 
-  const proxy = parseProxyUrl();
-  if (!proxy) {
-    console.log(`[Autotrader] No PROXY_URL configured — Autotrader requires a residential proxy to bypass Akamai bot detection. Skipping.`);
-    return [];
-  }
-
-  console.log(`[Autotrader] Using proxy: ${proxy.server}`);
-
   const listings: ScrapedListing[] = [];
+  const sbWs = process.env.BRIGHT_DATA_BROWSER_WS;
 
   let browser;
   try {
-    // Use playwright-extra with stealth plugin to bypass Akamai bot detection
-    const { chromium } = await import('playwright-extra');
-    const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+    let page;
 
-    chromium.use(StealthPlugin());
+    if (sbWs) {
+      // Bright Data Scraping Browser — handles Akamai/bot detection automatically
+      console.log(`[Autotrader] Connecting to Bright Data Scraping Browser...`);
+      const { chromium } = await import('playwright');
+      browser = await chromium.connectOverCDP(sbWs);
+      page = await browser.newPage();
+      console.log(`[Autotrader] Connected to Scraping Browser`);
+    } else {
+      // Fallback: stealth plugin + residential proxy
+      const proxy = parseProxyUrl();
+      if (!proxy) {
+        console.log(`[Autotrader] No BRIGHT_DATA_BROWSER_WS or PROXY_URL configured — Autotrader requires anti-bot bypass. Skipping.`);
+        return [];
+      }
 
-    browser = await chromium.launch({
-      headless: true,
-      proxy: { server: proxy.server, username: proxy.username, password: proxy.password },
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-blink-features=AutomationControlled',
-      ],
-    });
+      console.log(`[Autotrader] Using proxy: ${proxy.server}`);
+      const { chromium } = await import('playwright-extra');
+      const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+      chromium.use(StealthPlugin());
 
-    const context = await browser.newContext({
-      ignoreHTTPSErrors: true,
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      viewport: { width: 1920, height: 1080 },
-      locale: 'en-US',
-      timezoneId: 'America/New_York',
-    });
+      browser = await chromium.launch({
+        headless: true,
+        proxy: { server: proxy.server, username: proxy.username, password: proxy.password },
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-blink-features=AutomationControlled',
+        ],
+      });
 
-    const page = await context.newPage();
+      const context = await browser.newContext({
+        ignoreHTTPSErrors: true,
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        viewport: { width: 1920, height: 1080 },
+        locale: 'en-US',
+        timezoneId: 'America/New_York',
+      });
 
-    // Set extra headers to look more like a real browser
-    await page.setExtraHTTPHeaders({
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Sec-Fetch-Dest': 'document',
-      'Sec-Fetch-Mode': 'navigate',
-      'Sec-Fetch-Site': 'none',
-      'Sec-Fetch-User': '?1',
-      'Upgrade-Insecure-Requests': '1',
-    });
+      page = await context.newPage();
 
+      await page.setExtraHTTPHeaders({
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+      });
+    }
+
+    // Navigate — Scraping Browser needs longer timeout for challenge solving
+    const navTimeout = sbWs ? 120000 : 60000;
     await withRetry(async () => {
-      await page.goto(url, { waitUntil: 'load', timeout: 60000 });
+      await page.goto(url, { waitUntil: 'load', timeout: navTimeout });
     });
 
     // Quick check: if proxy returned an empty page, bail out early
     const htmlLength = await page.evaluate(() => document.documentElement?.outerHTML?.length || 0);
     if (htmlLength < 200) {
-      console.log(`[Autotrader] Proxy returned empty/blocked page (${htmlLength} chars). Autotrader is blocking this proxy's IP range.`);
+      console.log(`[Autotrader] Empty/blocked page (${htmlLength} chars). Skipping.`);
       await browser.close();
       browser = null;
       return [];
