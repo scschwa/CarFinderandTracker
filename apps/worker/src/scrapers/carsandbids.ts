@@ -6,11 +6,27 @@ function buildSearchUrl(params: SearchParams): string {
   return `https://carsandbids.com/search?q=${encodeURIComponent(query)}`;
 }
 
+/** Check if card text indicates a completed/closed auction */
+function isAuctionClosed(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes('sold') ||
+    lower.includes('completed') ||
+    lower.includes('ended') ||
+    lower.includes('final bid') ||
+    lower.includes('closed') ||
+    lower.includes('no sale') ||
+    lower.includes('reserve not met') ||
+    lower.includes('bid to $') // C&B shows "Bid to $X" for completed auctions
+  );
+}
+
 export async function scrapeCarsAndBids(params: SearchParams): Promise<ScrapedListing[]> {
   const url = buildSearchUrl(params);
   console.log(`[C&B] Scraping: ${url}`);
 
   const listings: ScrapedListing[] = [];
+  let skippedClosed = 0;
 
   let browser;
   try {
@@ -53,7 +69,7 @@ export async function scrapeCarsAndBids(params: SearchParams): Promise<ScrapedLi
       if (auctionLinks.length === 0) {
         await browser.close();
         browser = null;
-        console.log(`[C&B] Found 0 listings`);
+        console.log(`[C&B] Found 0 listings (0 active, 0 skipped closed)`);
         return [];
       }
 
@@ -63,6 +79,17 @@ export async function scrapeCarsAndBids(params: SearchParams): Promise<ScrapedLi
           const href = await link.evaluate((el: Element) => (el as HTMLAnchorElement).href);
           const text = await link.evaluate((el: Element) => el.textContent?.trim() || '');
           if (!href || !text || href === url) continue;
+
+          // Get the parent element's full text for better context
+          const parentText = await link.evaluate(
+            (el: Element) => el.closest('div, li, article')?.textContent || el.textContent || ''
+          );
+
+          // Skip closed/completed auctions
+          if (isAuctionClosed(parentText)) {
+            skippedClosed++;
+            continue;
+          }
 
           const yearMatch = text.match(/\b(19|20)\d{2}\b/);
           if (yearMatch) {
@@ -95,6 +122,17 @@ export async function scrapeCarsAndBids(params: SearchParams): Promise<ScrapedLi
 
       for (const card of cards) {
         try {
+          // Get card full text for sold detection
+          const cardText = await card.evaluate(
+            (el: Element) => el.textContent || ''
+          );
+
+          // Skip closed/completed auctions
+          if (isAuctionClosed(cardText)) {
+            skippedClosed++;
+            continue;
+          }
+
           // Try multiple selectors for the title
           const title = await card
             .$eval(
@@ -135,14 +173,6 @@ export async function scrapeCarsAndBids(params: SearchParams): Promise<ScrapedLi
             ? parseInt(priceMatch[1].replace(/,/g, '')) * 100
             : 0;
 
-          // Check if sold
-          const cardText = await card.evaluate(
-            (el: Element) => el.textContent || ''
-          );
-          const isSold =
-            cardText.toLowerCase().includes('sold') ||
-            cardText.toLowerCase().includes('completed');
-
           // Image
           const imageUrl = await card
             .$eval('img', (el: Element) => (el as HTMLImageElement).src || '')
@@ -166,8 +196,8 @@ export async function scrapeCarsAndBids(params: SearchParams): Promise<ScrapedLi
             sourceSite: 'carsandbids',
             location: '',
             mileage: null,
-            status: isSold ? 'sold' : 'active',
-            salePrice: isSold ? price : null,
+            status: 'active',
+            salePrice: null,
             imageUrl: imageUrl || null,
           });
         } catch {
@@ -184,6 +214,6 @@ export async function scrapeCarsAndBids(params: SearchParams): Promise<ScrapedLi
     if (browser) await browser.close().catch(() => {});
   }
 
-  console.log(`[C&B] Found ${listings.length} listings`);
+  console.log(`[C&B] Found ${listings.length} active listings (skipped ${skippedClosed} closed auctions)`);
   return listings;
 }

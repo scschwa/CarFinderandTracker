@@ -7,11 +7,26 @@ function buildSearchUrl(params: SearchParams): string {
   return `https://bringatrailer.com/search/?s=${encoded}`;
 }
 
+/** Check if card text indicates a completed/closed auction */
+function isAuctionClosed(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes('sold') ||
+    lower.includes('completed') ||
+    lower.includes('ended') ||
+    lower.includes('final bid') ||
+    lower.includes('closed') ||
+    lower.includes('no sale') ||
+    lower.includes('reserve not met')
+  );
+}
+
 export async function scrapeBaT(params: SearchParams): Promise<ScrapedListing[]> {
   const url = buildSearchUrl(params);
   console.log(`[BaT] Scraping: ${url}`);
 
   const listings: ScrapedListing[] = [];
+  let skippedClosed = 0;
 
   let browser;
   try {
@@ -46,6 +61,17 @@ export async function scrapeBaT(params: SearchParams): Promise<ScrapedListing[]>
 
     for (const card of cards) {
       try {
+        // Get full card text for sold/closed detection
+        const cardText = await card.evaluate(
+          (el: Element) => el.textContent || ''
+        );
+
+        // Skip closed/completed auctions
+        if (isAuctionClosed(cardText)) {
+          skippedClosed++;
+          continue;
+        }
+
         // Title from h3 inside the card
         const title = await card
           .$eval('h3', (el: Element) => el.textContent?.trim() || '')
@@ -73,15 +99,6 @@ export async function scrapeBaT(params: SearchParams): Promise<ScrapedListing[]>
           ? parseInt(priceMatch[1].replace(/,/g, '')) * 100
           : 0;
 
-        // Check if sold — look for "Sold" in item-results or item-tags
-        const resultsText = await card
-          .$eval(
-            '.item-results, .item-tags',
-            (el: Element) => el.textContent?.trim() || ''
-          )
-          .catch(() => '');
-        const isSold = resultsText.toLowerCase().includes('sold');
-
         // Image from thumbnail
         const imageUrl = await card
           .$eval(
@@ -105,8 +122,8 @@ export async function scrapeBaT(params: SearchParams): Promise<ScrapedListing[]>
           sourceSite: 'bat',
           location: '',
           mileage: null,
-          status: isSold ? 'sold' : 'active',
-          salePrice: isSold ? price : null,
+          status: 'active',
+          salePrice: null,
           imageUrl: imageUrl || null,
         });
       } catch {
@@ -122,6 +139,6 @@ export async function scrapeBaT(params: SearchParams): Promise<ScrapedListing[]>
     if (browser) await browser.close().catch(() => {});
   }
 
-  console.log(`[BaT] Found ${listings.length} listings`);
+  console.log(`[BaT] Found ${listings.length} active listings (skipped ${skippedClosed} closed auctions)`);
   return listings;
 }
