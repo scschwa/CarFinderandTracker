@@ -12,13 +12,12 @@ export async function POST(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Check existing preference
   const { data: existing } = await supabase
     .from('user_vehicle_prefs')
-    .select('*')
+    .select('id, is_hidden')
     .eq('user_id', user.id)
     .eq('listing_id', params.id)
-    .single();
+    .maybeSingle();
 
   if (existing) {
     const { data, error } = await supabase
@@ -28,25 +27,16 @@ export async function POST(
       .select()
       .single();
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json(data);
   }
 
   const { data, error } = await supabase
     .from('user_vehicle_prefs')
-    .insert({
-      user_id: user.id,
-      listing_id: params.id,
-      is_hidden: true,
-    })
+    .insert({ user_id: user.id, listing_id: params.id, is_hidden: true })
     .select()
     .single();
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data);
 }

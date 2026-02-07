@@ -48,7 +48,8 @@ export function PriceChart({ data }: PriceChartProps) {
             borderRadius: "8px",
             color: "#f9fafb",
           }}
-          formatter={(value: number) => [`$${value.toLocaleString()}`, "Price"]}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          formatter={(value: any) => [`$${Number(value).toLocaleString()}`, "Price"]}
         />
         <Line
           type="monotone"

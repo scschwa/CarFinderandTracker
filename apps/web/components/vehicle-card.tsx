@@ -58,7 +58,7 @@ export function VehicleCard({ listing, searchId }: VehicleCardProps) {
 
   const favMutation = useMutation({
     mutationFn: () =>
-      fetch(`/api/vehicles/${listing.id}/favorite`, { method: "POST" }),
+      fetch(`/api/listings/${listing.id}/favorite`, { method: "POST" }),
     onSuccess: () => {
       if (searchId) queryClient.invalidateQueries({ queryKey: ["search", searchId] });
       queryClient.invalidateQueries({ queryKey: ["searches"] });
@@ -67,7 +67,7 @@ export function VehicleCard({ listing, searchId }: VehicleCardProps) {
 
   const hideMutation = useMutation({
     mutationFn: () =>
-      fetch(`/api/vehicles/${listing.id}/hide`, { method: "POST" }),
+      fetch(`/api/listings/${listing.id}/hide`, { method: "POST" }),
     onSuccess: () => {
       if (searchId) queryClient.invalidateQueries({ queryKey: ["search", searchId] });
       queryClient.invalidateQueries({ queryKey: ["searches"] });

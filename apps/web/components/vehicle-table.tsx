@@ -43,14 +43,14 @@ export function VehicleTable({ listings, searchId }: { listings: ListingRow[]; s
   const queryClient = useQueryClient();
 
   const favMutation = useMutation({
-    mutationFn: (id: string) => fetch(`/api/vehicles/${id}/favorite`, { method: "POST" }),
+    mutationFn: (id: string) => fetch(`/api/listings/${id}/favorite`, { method: "POST" }),
     onSuccess: () => {
       if (searchId) queryClient.invalidateQueries({ queryKey: ["search", searchId] });
     },
   });
 
   const hideMutation = useMutation({
-    mutationFn: (id: string) => fetch(`/api/vehicles/${id}/hide`, { method: "POST" }),
+    mutationFn: (id: string) => fetch(`/api/listings/${id}/hide`, { method: "POST" }),
     onSuccess: () => {
       if (searchId) queryClient.invalidateQueries({ queryKey: ["search", searchId] });
     },
