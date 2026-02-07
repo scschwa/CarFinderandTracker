@@ -1,6 +1,6 @@
 import { ScrapedListing, SearchParams } from './types';
 import { withRetry, randomDelay } from '../utils/retry';
-import { extractVin } from '../utils/vin-extractor';
+import { extractVins } from '../utils/vin-extractor';
 
 function isAuctionClosed(text: string): boolean {
   const lower = text.toLowerCase();
@@ -248,20 +248,8 @@ export async function scrapeHemmings(params: SearchParams): Promise<ScrapedListi
       }
     }
 
-    // Extract VINs from detail pages
-    for (const listing of listings) {
-      if (!listing.url) continue;
-      try {
-        const vin = await extractVin(page, listing.url);
-        if (vin) {
-          listing.vin = vin;
-          console.log(`[Hemmings] Found VIN: ${vin} for ${listing.title}`);
-        }
-        await randomDelay(1000, 2000);
-      } catch {
-        // skip VIN extraction errors
-      }
-    }
+    // Extract VINs from detail pages (opens new tabs, max 10)
+    await extractVins(page.context(), listings, 'Hemmings');
 
     await browser.close();
     browser = null;

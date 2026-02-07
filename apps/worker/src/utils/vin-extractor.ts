@@ -1,15 +1,42 @@
-import type { Page } from 'playwright';
+import type { BrowserContext, Page } from 'playwright';
 
 const VIN_REGEX = /\b[A-HJ-NPR-Z0-9]{17}\b/;
 
-export async function extractVin(page: Page, url: string): Promise<string | null> {
+const MAX_VIN_EXTRACTIONS = 10;
+
+export async function extractVins(
+  context: BrowserContext,
+  listings: { url: string; vin: string | null; title: string }[],
+  scraperName: string,
+): Promise<void> {
+  let extracted = 0;
+  for (const listing of listings) {
+    if (extracted >= MAX_VIN_EXTRACTIONS) break;
+    if (!listing.url || listing.vin) continue;
+
+    const vin = await extractVinFromUrl(context, listing.url);
+    if (vin) {
+      listing.vin = vin;
+      console.log(`[${scraperName}] VIN: ${vin} for ${listing.title}`);
+    }
+    extracted++;
+
+    // Small delay between detail page visits
+    await new Promise((r) => setTimeout(r, 1000 + Math.random() * 1000));
+  }
+  console.log(`[${scraperName}] VIN extraction: checked ${extracted} listings`);
+}
+
+async function extractVinFromUrl(context: BrowserContext, url: string): Promise<string | null> {
+  let page: Page | null = null;
   try {
+    page = await context.newPage();
     console.log(`[VIN] Navigating to: ${url}`);
     await page.goto(url, { waitUntil: 'load', timeout: 20000 });
 
     // Wait for JS to render content
     await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 1500));
 
     // Try specific VIN selectors first
     const selectors = [
@@ -21,7 +48,6 @@ export async function extractVin(page: Page, url: string): Promise<string | null
       '[id*="vin"]',
       '[id*="VIN"]',
       '[data-testid*="vin"]',
-      'td:has(+ td)',  // table cells that might contain VIN label/value pairs
     ];
 
     for (const selector of selectors) {
@@ -32,7 +58,7 @@ export async function extractVin(page: Page, url: string): Promise<string | null
           if (dataVin) {
             const match = dataVin.match(VIN_REGEX);
             if (match) {
-              console.log(`[VIN] Found via data-vin attribute: ${match[0]}`);
+              console.log(`[VIN] Found via data-vin: ${match[0]}`);
               return match[0];
             }
           }
@@ -57,18 +83,12 @@ export async function extractVin(page: Page, url: string): Promise<string | null
       return htmlMatch[0];
     }
 
-    // Fallback: search full visible body text
-    const bodyText = await page.evaluate(() => document.body?.innerText || '');
-    const bodyMatch = bodyText.match(VIN_REGEX);
-    if (bodyMatch) {
-      console.log(`[VIN] Found in body text: ${bodyMatch[0]}`);
-      return bodyMatch[0];
-    }
-
     console.log(`[VIN] No VIN found on: ${url}`);
     return null;
   } catch (err) {
-    console.log(`[VIN] Error extracting from ${url}: ${err instanceof Error ? err.message : String(err)}`);
+    console.log(`[VIN] Error on ${url}: ${err instanceof Error ? err.message : String(err)}`);
     return null;
+  } finally {
+    if (page) await page.close().catch(() => {});
   }
 }

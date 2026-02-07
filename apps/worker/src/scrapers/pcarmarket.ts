@@ -1,6 +1,6 @@
 import { ScrapedListing, SearchParams } from './types';
 import { withRetry, randomDelay } from '../utils/retry';
-import { extractVin } from '../utils/vin-extractor';
+import { extractVins } from '../utils/vin-extractor';
 
 function buildSearchUrl(params: SearchParams): string {
   const query = `${params.make} ${params.model}${params.trim ? ' ' + params.trim : ''}`;
@@ -214,20 +214,8 @@ export async function scrapePcarmarket(params: SearchParams): Promise<ScrapedLis
       }
     }
 
-    // Extract VINs from detail pages
-    for (const listing of listings) {
-      if (!listing.url) continue;
-      try {
-        const vin = await extractVin(page, listing.url);
-        if (vin) {
-          listing.vin = vin;
-          console.log(`[PCARMARKET] Found VIN: ${vin} for ${listing.title}`);
-        }
-        await randomDelay(1000, 2000);
-      } catch {
-        // skip VIN extraction errors
-      }
-    }
+    // Extract VINs from detail pages (opens new tabs, max 10)
+    await extractVins(page.context(), listings, 'PCARMARKET');
 
     await browser.close();
     browser = null;
