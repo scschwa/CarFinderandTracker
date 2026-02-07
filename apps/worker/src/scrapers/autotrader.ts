@@ -91,9 +91,18 @@ export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedLis
       await page.goto(url, { waitUntil: 'load', timeout: 60000 });
     });
 
-    // Wait longer for JS to render — proxy adds latency
+    // Quick check: if proxy returned an empty page, bail out early
+    const htmlLength = await page.evaluate(() => document.documentElement?.outerHTML?.length || 0);
+    if (htmlLength < 200) {
+      console.log(`[Autotrader] Proxy returned empty/blocked page (${htmlLength} chars). Autotrader is blocking this proxy's IP range.`);
+      await browser.close();
+      browser = null;
+      return [];
+    }
+
+    // Wait for JS to render — proxy adds latency
     await page.waitForLoadState('networkidle').catch(() => {});
-    await randomDelay(5000, 8000);
+    await randomDelay(3000, 5000);
 
     // Try multiple selectors — Autotrader may have changed their markup
     const selectorStrategies = [
