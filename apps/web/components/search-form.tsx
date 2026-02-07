@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil } from "lucide-react";
+import { Plus } from "lucide-react";
 
 const currentYear = new Date().getFullYear();
 const years = Array.from({ length: currentYear - 1989 }, (_, i) => currentYear + 1 - i);
