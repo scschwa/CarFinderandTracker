@@ -88,11 +88,12 @@ export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedLis
     });
 
     await withRetry(async () => {
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
+      await page.goto(url, { waitUntil: 'load', timeout: 60000 });
     });
 
-    // Give the page extra time for JS rendering
-    await randomDelay(3000, 5000);
+    // Wait longer for JS to render — proxy adds latency
+    await page.waitForLoadState('networkidle').catch(() => {});
+    await randomDelay(5000, 8000);
 
     // Try multiple selectors — Autotrader may have changed their markup
     const selectorStrategies = [
@@ -117,25 +118,36 @@ export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedLis
     }
 
     if (items.length === 0) {
-      // Diagnostic: log what's on the page
+      // Diagnostic: log detailed page info
       const pageTitle = await page.title();
       const pageUrl = page.url();
-      const bodyPreview = await page.evaluate(
-        () => document.body?.innerText?.substring(0, 800) || ''
-      );
+      const diagnostics = await page.evaluate(() => {
+        const html = document.documentElement?.outerHTML || '';
+        const scripts = document.querySelectorAll('script');
+        const bodyText = document.body?.innerText?.substring(0, 500) || '';
+        return {
+          htmlLength: html.length,
+          htmlPreview: html.substring(0, 1000),
+          scriptCount: scripts.length,
+          bodyText,
+        };
+      });
 
       console.log(`[Autotrader] No listings found with any selector strategy`);
-      console.log(`[Autotrader] Page title: ${pageTitle}`);
+      console.log(`[Autotrader] Page title: "${pageTitle}"`);
       console.log(`[Autotrader] Current URL: ${pageUrl}`);
-      console.log(`[Autotrader] Body preview: ${bodyPreview.substring(0, 500)}`);
+      console.log(`[Autotrader] HTML length: ${diagnostics.htmlLength} chars, ${diagnostics.scriptCount} script tags`);
+      console.log(`[Autotrader] HTML preview: ${diagnostics.htmlPreview}`);
+      console.log(`[Autotrader] Body text: "${diagnostics.bodyText}"`);
 
       // Check if it's a captcha/challenge page
-      const hasCaptcha = bodyPreview.toLowerCase().includes('captcha') ||
-        bodyPreview.toLowerCase().includes('verify') ||
-        bodyPreview.toLowerCase().includes('robot') ||
-        bodyPreview.toLowerCase().includes('challenge') ||
-        bodyPreview.toLowerCase().includes('unavailable') ||
-        bodyPreview.toLowerCase().includes('incident');
+      const combined = (diagnostics.bodyText + diagnostics.htmlPreview).toLowerCase();
+      const hasCaptcha = combined.includes('captcha') ||
+        combined.includes('verify') ||
+        combined.includes('robot') ||
+        combined.includes('challenge') ||
+        combined.includes('unavailable') ||
+        combined.includes('incident');
 
       if (hasCaptcha) {
         console.log(`[Autotrader] Bot detection page detected — proxy may not be residential or may be rate-limited`);
