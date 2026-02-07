@@ -1,0 +1,14 @@
+{
+  "name": "car-finder-and-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspace=apps/web",
+    "worker:dev": "npm run dev --workspace=apps/worker",
+    "worker:build": "npm run build --workspace=apps/worker"
+  }
+}
