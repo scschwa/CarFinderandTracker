@@ -24,9 +24,34 @@ export async function POST(
     return NextResponse.json({ error: 'Search not found' }, { status: 404 });
   }
 
-  // TODO: Wire up actual scraping trigger via Railway worker
-  return NextResponse.json({
-    message: 'Scrape triggered',
-    searchId: params.id,
-  });
+  const workerUrl = process.env.WORKER_URL;
+  if (!workerUrl) {
+    return NextResponse.json({ error: 'Worker not configured' }, { status: 503 });
+  }
+
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (process.env.WORKER_API_KEY) {
+      headers['Authorization'] = `Bearer ${process.env.WORKER_API_KEY}`;
+    }
+
+    const workerRes = await fetch(`${workerUrl}/trigger/${params.id}`, {
+      method: 'POST',
+      headers,
+    });
+
+    if (!workerRes.ok) {
+      const body = await workerRes.text();
+      return NextResponse.json(
+        { error: 'Worker returned an error', detail: body },
+        { status: workerRes.status }
+      );
+    }
+
+    const result = await workerRes.json();
+    return NextResponse.json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return NextResponse.json({ error: 'Failed to reach worker', detail: message }, { status: 502 });
+  }
 }

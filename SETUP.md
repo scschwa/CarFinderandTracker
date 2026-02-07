@@ -61,6 +61,7 @@ For the worker, create `apps/worker/.env`:
 SUPABASE_URL=https://your-project-id.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
 RESEND_API_KEY=your-resend-api-key-here
+WORKER_API_KEY=pick-a-strong-random-secret
 RUN_ON_START=true
 ```
 
@@ -93,6 +94,8 @@ The worker will start and, if `RUN_ON_START=true`, immediately scrape all active
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `RESEND_API_KEY`
    - `NEXT_PUBLIC_APP_URL` (your Vercel domain, e.g. `https://carfinder.vercel.app`)
+   - `WORKER_URL` (your Railway worker's public URL, e.g. `https://your-worker.railway.app`)
+   - `WORKER_API_KEY` (same secret you set in Railway)
 5. Deploy
 
 ### Worker (Railway)
@@ -105,10 +108,12 @@ The worker will start and, if `RUN_ON_START=true`, immediately scrape all active
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `RESEND_API_KEY`
+   - `WORKER_API_KEY` (generate a strong random secret, e.g. `openssl rand -hex 32`)
    - `RUN_ON_START=false` (let it run on its cron schedule)
 6. Deploy
+7. After deploying, note the worker's public URL from Railway (Settings > Networking > Public Networking). Add this as `WORKER_URL` in your Vercel env vars.
 
-The worker runs a cron job at **7:00 AM ET daily** to scrape all active searches.
+The worker runs a cron job at **7:00 AM ET daily** to scrape all active searches. It also exposes an HTTP endpoint so the web app can trigger on-demand scrapes when users click "Run Search Now".
 
 ### Supabase (Production)
 
@@ -133,7 +138,10 @@ The worker runs a cron job at **7:00 AM ET daily** to scrape all active searches
 │   (Next.js)   │◄───►│   (PostgreSQL)   │◄───►│   (Worker)    │
 │   Frontend    │     │   Auth + RLS     │     │   Scrapers    │
 │   API Routes  │     │   Database       │     │   Cron Jobs   │
-└──────────────┘     └──────────────────┘     └──────────────┘
+└──────┬───────┘     └──────────────────┘     └──────┬───────┘
+       │                                              │
+       │         POST /trigger/:searchId              │
+       └─────────────────────────────────────────────►│
                                                       │
                                                ┌──────┴──────┐
                                                │   Resend     │
@@ -151,5 +159,7 @@ The worker runs a cron job at **7:00 AM ET daily** to scrape all active searches
 | `SUPABASE_URL` | Worker | Same as NEXT_PUBLIC_SUPABASE_URL (worker uses different env var name) |
 | `RESEND_API_KEY` | Worker | Resend email API key |
 | `NEXT_PUBLIC_APP_URL` | Web | Public URL of the frontend app |
+| `WORKER_URL` | Web | Public URL of the Railway worker (e.g. `https://your-worker.railway.app`) |
+| `WORKER_API_KEY` | Web + Worker | Shared secret for authenticating web-to-worker requests |
 | `RUN_ON_START` | Worker | Set to "true" to run scraping immediately on worker start |
 | `PROXY_LIST` | Worker | Optional comma-separated list of proxy URLs for scraping |
