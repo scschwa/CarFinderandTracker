@@ -75,8 +75,8 @@ async function runSingleSearch(searchId: string): Promise<{ ok: boolean; message
 
 // --- HTTP server for on-demand triggers ---
 const server = http.createServer(async (req, res) => {
-  // Health check
-  if (req.method === 'GET' && req.url === '/health') {
+  // Root / health check — Railway hits GET / to verify the service is alive
+  if (req.method === 'GET' && (req.url === '/' || req.url === '/health')) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok' }));
     return;
