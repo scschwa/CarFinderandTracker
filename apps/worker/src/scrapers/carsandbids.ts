@@ -1,16 +1,5 @@
-import * as cheerio from 'cheerio';
 import { ScrapedListing, SearchParams } from './types';
 import { withRetry, randomDelay } from '../utils/retry';
-
-const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-];
-
-function getRandomUA(): string {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-}
 
 function buildSearchUrl(params: SearchParams): string {
   const query = `${params.make} ${params.model}${params.trim ? ' ' + params.trim : ''}`;
@@ -23,77 +12,176 @@ export async function scrapeCarsAndBids(params: SearchParams): Promise<ScrapedLi
 
   const listings: ScrapedListing[] = [];
 
+  let browser;
   try {
-    const html = await withRetry(async () => {
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': getRandomUA(),
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-        },
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return response.text();
+    const { chromium } = await import('playwright');
+
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
 
-    const $ = cheerio.load(html);
+    const context = await browser.newContext({
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1920, height: 1080 },
+    });
 
-    // C&B auction cards
-    $('.auction-card, [class*="auction-item"], .search-result').each((_, el) => {
-      try {
-        const $el = $(el);
-        const titleEl = $el.find('a[href*="/auctions/"], h3 a, .auction-title a').first();
-        const title = titleEl.text().trim();
-        const listingUrl = titleEl.attr('href') || '';
+    const page = await context.newPage();
 
-        if (!title || !listingUrl) return;
+    await withRetry(async () => {
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 });
+    });
 
-        // Extract current bid / price
-        const priceText = $el.find('[class*="bid"], [class*="price"], .current-bid').text();
-        const priceMatch = priceText.match(/\$?([\d,]+)/);
-        const price = priceMatch ? parseInt(priceMatch[1].replace(/,/g, '')) * 100 : 0;
+    // Wait for content to load — try multiple possible selectors
+    const cardSelector = await Promise.race([
+      page.waitForSelector('.auction-item', { timeout: 10000 }).then(() => '.auction-item'),
+      page.waitForSelector('.auction-card', { timeout: 10000 }).then(() => '.auction-card'),
+      page.waitForSelector('[class*="auction"]', { timeout: 10000 }).then(() => '[class*="auction"]'),
+      page.waitForSelector('a[href*="/auctions/"]', { timeout: 10000 }).then(() => 'a[href*="/auctions/"]'),
+    ]).catch(() => null);
 
-        // Check if sold
-        const isSold = $el.text().toLowerCase().includes('sold') ||
-                       $el.find('[class*="sold"], [class*="completed"]').length > 0;
+    if (!cardSelector) {
+      // Debug: log what's on the page
+      const bodyText = await page.evaluate(() => document.body?.innerText?.substring(0, 500) || '');
+      console.log(`[C&B] No auction cards found. Page text preview: ${bodyText}`);
 
-        // Location
-        const location = $el.find('[class*="location"]').text().trim() || '';
+      // Try one more approach: look for any links to auctions
+      const auctionLinks = await page.$$('a[href*="/auctions/"]');
+      console.log(`[C&B] Found ${auctionLinks.length} auction links on page`);
 
-        // Image
-        const imageUrl = $el.find('img').first().attr('src') || $el.find('img').first().attr('data-src') || null;
-
-        // VIN
-        const bodyText = $el.text();
-        const vinMatch = bodyText.match(/\b[A-HJ-NPR-Z0-9]{17}\b/);
-
-        // Filter by year range
-        const yearMatch = title.match(/\b(19|20)\d{2}\b/);
-        if (yearMatch) {
-          const year = parseInt(yearMatch[0]);
-          if (year < params.year_min || year > params.year_max) return;
-        }
-
-        listings.push({
-          vin: vinMatch ? vinMatch[0] : null,
-          title,
-          price,
-          url: listingUrl.startsWith('http') ? listingUrl : `https://carsandbids.com${listingUrl}`,
-          sourceSite: 'carsandbids',
-          location,
-          mileage: null,
-          status: isSold ? 'sold' : 'active',
-          salePrice: isSold ? price : null,
-          imageUrl,
-        });
-      } catch (err) {
-        // Skip individual listing parse errors
+      if (auctionLinks.length === 0) {
+        await browser.close();
+        browser = null;
+        console.log(`[C&B] Found 0 listings`);
+        return [];
       }
-    });
 
-    await randomDelay(2000, 4000);
+      // If we found auction links but not card containers, extract from links
+      for (const link of auctionLinks) {
+        try {
+          const href = await link.evaluate((el: Element) => (el as HTMLAnchorElement).href);
+          const text = await link.evaluate((el: Element) => el.textContent?.trim() || '');
+          if (!href || !text || href === url) continue;
+
+          const yearMatch = text.match(/\b(19|20)\d{2}\b/);
+          if (yearMatch) {
+            const year = parseInt(yearMatch[0]);
+            if (year < params.year_min || year > params.year_max) continue;
+          }
+
+          listings.push({
+            vin: null,
+            title: text,
+            price: 0,
+            url: href,
+            sourceSite: 'carsandbids',
+            location: '',
+            mileage: null,
+            status: 'active',
+            salePrice: null,
+            imageUrl: null,
+          });
+        } catch {
+          // skip
+        }
+      }
+    } else {
+      console.log(`[C&B] Using selector: ${cardSelector}`);
+      await randomDelay(1000, 2000);
+
+      const cards = await page.$$(cardSelector);
+      console.log(`[C&B] Found ${cards.length} cards on page`);
+
+      for (const card of cards) {
+        try {
+          // Try multiple selectors for the title
+          const title = await card
+            .$eval(
+              'h3, h2, .auction-title, [class*="title"]',
+              (el: Element) => el.textContent?.trim() || ''
+            )
+            .catch(() => '');
+
+          // Get link URL from card or nested anchor
+          let listingUrl = '';
+          const tagName = await card.evaluate((el: Element) => el.tagName.toLowerCase());
+
+          if (tagName === 'a') {
+            listingUrl = await card.evaluate(
+              (el: Element) => (el as HTMLAnchorElement).href
+            );
+          } else {
+            listingUrl = await card
+              .$eval(
+                'a[href*="/auctions/"], a',
+                (el: Element) => (el as HTMLAnchorElement).href
+              )
+              .catch(() => '');
+          }
+
+          if (!title && !listingUrl) continue;
+
+          // Price / bid
+          const priceText = await card
+            .$eval(
+              '[class*="bid"], [class*="price"], .current-bid, .high-bid',
+              (el: Element) => el.textContent?.trim() || ''
+            )
+            .catch(() => '');
+
+          const priceMatch = priceText.match(/\$?([\d,]+)/);
+          const price = priceMatch
+            ? parseInt(priceMatch[1].replace(/,/g, '')) * 100
+            : 0;
+
+          // Check if sold
+          const cardText = await card.evaluate(
+            (el: Element) => el.textContent || ''
+          );
+          const isSold =
+            cardText.toLowerCase().includes('sold') ||
+            cardText.toLowerCase().includes('completed');
+
+          // Image
+          const imageUrl = await card
+            .$eval('img', (el: Element) => (el as HTMLImageElement).src || '')
+            .catch(() => null);
+
+          // Filter by year range
+          const displayTitle = title || listingUrl;
+          const yearMatch = displayTitle.match(/\b(19|20)\d{2}\b/);
+          if (yearMatch) {
+            const year = parseInt(yearMatch[0]);
+            if (year < params.year_min || year > params.year_max) continue;
+          }
+
+          listings.push({
+            vin: null,
+            title: title || listingUrl.split('/').pop() || 'Unknown',
+            price,
+            url: listingUrl.startsWith('http')
+              ? listingUrl
+              : `https://carsandbids.com${listingUrl}`,
+            sourceSite: 'carsandbids',
+            location: '',
+            mileage: null,
+            status: isSold ? 'sold' : 'active',
+            salePrice: isSold ? price : null,
+            imageUrl: imageUrl || null,
+          });
+        } catch {
+          // Skip individual listing parse errors
+        }
+      }
+    }
+
+    await browser.close();
+    browser = null;
   } catch (err) {
     console.error(`[C&B] Scrape error:`, err);
+  } finally {
+    if (browser) await browser.close().catch(() => {});
   }
 
   console.log(`[C&B] Found ${listings.length} listings`);

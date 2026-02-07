@@ -9,7 +9,6 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
-    "cheerio": "^1.0.0-rc.12",
     "node-cron": "^3.0.3",
     "p-limit": "^5.0.0",
     "playwright": "^1.40.0",

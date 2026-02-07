@@ -1,16 +1,5 @@
-import * as cheerio from 'cheerio';
 import { ScrapedListing, SearchParams } from './types';
 import { withRetry, randomDelay } from '../utils/retry';
-
-const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-];
-
-function getRandomUA(): string {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-}
 
 function buildSearchUrl(params: SearchParams): string {
   const query = `${params.make} ${params.model}${params.trim ? ' ' + params.trim : ''}`;
@@ -24,77 +13,113 @@ export async function scrapeBaT(params: SearchParams): Promise<ScrapedListing[]>
 
   const listings: ScrapedListing[] = [];
 
+  let browser;
   try {
-    const html = await withRetry(async () => {
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': getRandomUA(),
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-        },
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return response.text();
+    const { chromium } = await import('playwright');
+
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });
 
-    const $ = cheerio.load(html);
+    const context = await browser.newContext({
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1920, height: 1080 },
+    });
 
-    // BaT search results are in listing cards
-    $('.listing-card, .search-result-item, [class*="listing"]').each((_, el) => {
+    const page = await context.newPage();
+
+    await withRetry(async () => {
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+      // BaT uses Knockout.js — wait for listing cards to be rendered
+      await page
+        .waitForSelector('a.listing-card', { timeout: 10000 })
+        .catch(() => {});
+    });
+
+    // Give Knockout.js a moment to finish binding
+    await randomDelay(2000, 3000);
+
+    const cards = await page.$$('a.listing-card');
+    console.log(`[BaT] Found ${cards.length} cards on page`);
+
+    for (const card of cards) {
       try {
-        const $el = $(el);
-        const titleEl = $el.find('a[href*="/listing/"], h3 a, .listing-title a').first();
-        const title = titleEl.text().trim();
-        const listingUrl = titleEl.attr('href') || '';
+        // Title from h3 inside the card
+        const title = await card
+          .$eval('h3', (el: Element) => el.textContent?.trim() || '')
+          .catch(() => '');
 
-        if (!title || !listingUrl) return;
+        if (!title) continue;
 
-        // Extract price from bid/price text
-        const priceText = $el.find('[class*="price"], [class*="bid"], .listing-card-price').text();
+        // Link URL from the card itself (it's an <a> element)
+        const listingUrl = await card.evaluate(
+          (el: Element) => (el as HTMLAnchorElement).href
+        );
+
+        if (!listingUrl) continue;
+
+        // Price / bid from .bid-formatted.bold or any bid span
+        const priceText = await card
+          .$eval(
+            '.bid-formatted.bold, .bidding-bid span, [class*="bid-formatted"]',
+            (el: Element) => el.textContent?.trim() || ''
+          )
+          .catch(() => '');
+
         const priceMatch = priceText.match(/\$?([\d,]+)/);
-        const price = priceMatch ? parseInt(priceMatch[1].replace(/,/g, '')) * 100 : 0;
+        const price = priceMatch
+          ? parseInt(priceMatch[1].replace(/,/g, '')) * 100
+          : 0;
 
-        // Check if sold
-        const isSold = $el.text().toLowerCase().includes('sold') ||
-                       $el.find('[class*="sold"]').length > 0;
+        // Check if sold — look for "Sold" in item-results or item-tags
+        const resultsText = await card
+          .$eval(
+            '.item-results, .item-tags',
+            (el: Element) => el.textContent?.trim() || ''
+          )
+          .catch(() => '');
+        const isSold = resultsText.toLowerCase().includes('sold');
 
-        // Extract location
-        const location = $el.find('[class*="location"], .listing-card-location').text().trim() || '';
-
-        // Extract image
-        const imageUrl = $el.find('img').first().attr('src') || $el.find('img').first().attr('data-src') || null;
-
-        // Extract VIN from listing text (if available)
-        const bodyText = $el.text();
-        const vinMatch = bodyText.match(/\b[A-HJ-NPR-Z0-9]{17}\b/);
+        // Image from thumbnail
+        const imageUrl = await card
+          .$eval(
+            '.thumbnail img, img',
+            (el: Element) => (el as HTMLImageElement).src || ''
+          )
+          .catch(() => null);
 
         // Filter by year range
         const yearMatch = title.match(/\b(19|20)\d{2}\b/);
         if (yearMatch) {
           const year = parseInt(yearMatch[0]);
-          if (year < params.year_min || year > params.year_max) return;
+          if (year < params.year_min || year > params.year_max) continue;
         }
 
         listings.push({
-          vin: vinMatch ? vinMatch[0] : null,
+          vin: null,
           title,
           price,
-          url: listingUrl.startsWith('http') ? listingUrl : `https://bringatrailer.com${listingUrl}`,
+          url: listingUrl,
           sourceSite: 'bat',
-          location,
+          location: '',
           mileage: null,
           status: isSold ? 'sold' : 'active',
           salePrice: isSold ? price : null,
-          imageUrl,
+          imageUrl: imageUrl || null,
         });
-      } catch (err) {
+      } catch {
         // Skip individual listing parse errors
       }
-    });
+    }
 
-    await randomDelay(2000, 4000);
+    await browser.close();
+    browser = null;
   } catch (err) {
     console.error(`[BaT] Scrape error:`, err);
+  } finally {
+    if (browser) await browser.close().catch(() => {});
   }
 
   console.log(`[BaT] Found ${listings.length} listings`);
