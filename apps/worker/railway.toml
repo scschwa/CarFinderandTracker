@@ -1,9 +1,8 @@
 [build]
-builder = "NIXPACKS"
-buildCommand = "npm run build && npx playwright install --with-deps chromium"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "npm start"
 healthcheckPath = "/"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
