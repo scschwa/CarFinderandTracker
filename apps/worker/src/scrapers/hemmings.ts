@@ -2,11 +2,6 @@ import { ScrapedListing, SearchParams } from './types';
 import { withRetry, randomDelay } from '../utils/retry';
 import { extractVin } from '../utils/vin-extractor';
 
-function buildSearchUrl(params: SearchParams): string {
-  const query = `${params.make} ${params.model}${params.trim ? ' ' + params.trim : ''}`;
-  return `https://www.hemmings.com/auction/cars/?q=${encodeURIComponent(query)}`;
-}
-
 function isAuctionClosed(text: string): boolean {
   const lower = text.toLowerCase();
   return (
@@ -22,8 +17,8 @@ function isAuctionClosed(text: string): boolean {
 }
 
 export async function scrapeHemmings(params: SearchParams): Promise<ScrapedListing[]> {
-  const url = buildSearchUrl(params);
-  console.log(`[Hemmings] Scraping: ${url}`);
+  const query = `${params.make} ${params.model}${params.trim ? ' ' + params.trim : ''}`;
+  console.log(`[Hemmings] Searching for: ${query}`);
 
   const listings: ScrapedListing[] = [];
   let skippedClosed = 0;
@@ -45,19 +40,59 @@ export async function scrapeHemmings(params: SearchParams): Promise<ScrapedListi
 
     const page = await context.newPage();
 
+    // Navigate to homepage and use their search
     await withRetry(async () => {
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+      await page.goto('https://www.hemmings.com', { waitUntil: 'networkidle', timeout: 30000 });
     });
 
-    await randomDelay(2000, 3000);
+    await randomDelay(1000, 2000);
 
-    // Try multiple selectors for auction listing cards
+    // Find and use the search input
+    const searchInput = await page.$('input[type="search"], input[name="q"], input[placeholder*="earch"], input[class*="search"], #search-input');
+    if (searchInput) {
+      await searchInput.fill(query);
+      await searchInput.press('Enter');
+      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+      await randomDelay(2000, 3000);
+      console.log(`[Hemmings] Search submitted, landed on: ${page.url()}`);
+    } else {
+      // Fallback: try direct URL patterns
+      const urlAttempts = [
+        `https://www.hemmings.com/classifieds/cars/for-sale?q=${encodeURIComponent(query)}`,
+        `https://www.hemmings.com/auctions?q=${encodeURIComponent(query)}`,
+      ];
+
+      let found = false;
+      for (const tryUrl of urlAttempts) {
+        await page.goto(tryUrl, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
+        const title = await page.title();
+        if (!title.includes('404')) {
+          console.log(`[Hemmings] Using URL: ${tryUrl}`);
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        console.log(`[Hemmings] Could not find working search URL`);
+        await browser.close();
+        browser = null;
+        return [];
+      }
+
+      await randomDelay(2000, 3000);
+    }
+
+    // Try multiple selectors for listing cards
     const selectorStrategies = [
       '.auction-card',
       '.listing-card',
       '[class*="auction-item"]',
       '[class*="listing-item"]',
+      '[class*="ListingCard"]',
+      '[class*="vehicle-card"]',
       'a[href*="/auction/"]',
+      'a[href*="/classifieds/"]',
       'article',
     ];
 
@@ -92,9 +127,9 @@ export async function scrapeHemmings(params: SearchParams): Promise<ScrapedListi
       console.log(`[Hemmings] Body text: "${diagnostics.bodyText}"`);
       console.log(`[Hemmings] HTML preview: ${diagnostics.htmlPreview}`);
 
-      // Fallback: try any links to auction detail pages
-      const auctionLinks = await page.$$('a[href*="/auction/"]');
-      console.log(`[Hemmings] Found ${auctionLinks.length} auction links as fallback`);
+      // Fallback: try any links to auction/listing detail pages
+      const auctionLinks = await page.$$('a[href*="/auction/"], a[href*="/classifieds/cars/"], a[href*="/listing/"]');
+      console.log(`[Hemmings] Found ${auctionLinks.length} listing links as fallback`);
 
       for (const link of auctionLinks) {
         try {
@@ -104,7 +139,7 @@ export async function scrapeHemmings(params: SearchParams): Promise<ScrapedListi
             return parent?.textContent?.trim() || el.textContent?.trim() || '';
           });
 
-          if (!href || !text || href === url) continue;
+          if (!href || !text || href === page.url()) continue;
 
           if (isAuctionClosed(text)) {
             skippedClosed++;
