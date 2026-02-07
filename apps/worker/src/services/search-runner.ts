@@ -80,9 +80,71 @@ export async function runSearchScrape(search: {
   const foundUrls = new Set<string>();
 
   for (const scraped of allListings) {
+    // Skip listings with no price
+    if (!scraped.price || scraped.price === 0) continue;
+
     foundUrls.add(scraped.url);
 
-    // Upsert vehicle (by VIN if available)
+    // URL-based dedup: check if a listing with this URL already exists for this search
+    const { data: existingByUrl } = await supabase
+      .from('listings')
+      .select('id, vehicle_id, current_price, status')
+      .eq('search_id', search.id)
+      .eq('url', scraped.url)
+      .single();
+
+    if (existingByUrl) {
+      // Update existing listing found by URL
+      const updates: Record<string, unknown> = {
+        last_seen: new Date().toISOString(),
+        current_price: scraped.price,
+      };
+
+      if (scraped.status === 'sold' && existingByUrl.status !== 'sold') {
+        updates.status = 'sold';
+        updates.sale_price = scraped.salePrice || scraped.price;
+        soldAlerts.push({
+          title: scraped.title,
+          salePrice: scraped.salePrice || scraped.price,
+          sourceSite: scraped.sourceSite,
+          url: scraped.url,
+        });
+      }
+
+      // Update VIN on the vehicle if we now have a real one
+      if (scraped.vin) {
+        await supabase.from('vehicles').update({ vin: scraped.vin }).eq('id', existingByUrl.vehicle_id);
+      }
+
+      await supabase.from('listings').update(updates).eq('id', existingByUrl.id);
+
+      if (scraped.price && existingByUrl.current_price) {
+        const oldPrice = existingByUrl.current_price;
+        const newPrice = scraped.price;
+        if (newPrice < oldPrice) {
+          const dropPct = ((oldPrice - newPrice) / oldPrice) * 100;
+          priceDropAlerts.push({
+            listingTitle: scraped.title,
+            oldPrice,
+            newPrice,
+            dropPct,
+            url: scraped.url,
+          });
+        }
+      }
+
+      if (scraped.price) {
+        await recordPrice(existingByUrl.id, scraped.price);
+      }
+
+      if (scraped.vin) {
+        await detectCrossListings(existingByUrl.vehicle_id);
+      }
+
+      continue;
+    }
+
+    // No existing listing by URL — create vehicle and listing
     let vehicleId: string | null = null;
 
     if (scraped.vin) {

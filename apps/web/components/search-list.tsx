@@ -1,11 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Search, Trash2, Pause, Play } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { SearchForm } from "@/components/search-form";
+import { Search, Trash2, Pause, Play, Pencil } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 interface SavedSearch {
@@ -26,6 +31,7 @@ interface SavedSearch {
 export function SearchList() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [editingSearch, setEditingSearch] = useState<SavedSearch | null>(null);
 
   const { data: searches, isLoading } = useQuery<SavedSearch[]>({
     queryKey: ["searches"],
@@ -73,41 +79,60 @@ export function SearchList() {
   }
 
   return (
-    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {searches.map((search) => {
-        const listingCount = search.listings?.[0]?.count ?? 0;
-        return (
-          <Card key={search.id} className="cursor-pointer hover:border-blue-500/50 transition-colors" onClick={() => router.push(`/dashboard/searches/${search.id}`)}>
-            <CardContent className="p-4">
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <h3 className="font-semibold">{search.make} {search.model}{search.trim ? ` ${search.trim}` : ""}</h3>
-                  <p className="text-sm text-muted-foreground">{search.year_min}–{search.year_max}</p>
+    <>
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {searches.map((search) => {
+          const listingCount = search.listings?.[0]?.count ?? 0;
+          return (
+            <Card key={search.id} className="cursor-pointer hover:border-blue-500/50 transition-colors" onClick={() => router.push(`/dashboard/searches/${search.id}`)}>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <h3 className="font-semibold">{search.make} {search.model}{search.trim ? ` ${search.trim}` : ""}</h3>
+                    <p className="text-sm text-muted-foreground">{search.year_min}–{search.year_max}</p>
+                  </div>
+                  <Badge variant="outline" className={search.is_active ? "bg-green-500/20 text-green-400 border-green-500/30" : "bg-muted text-muted-foreground"}>
+                    {search.is_active ? "Active" : "Paused"}
+                  </Badge>
                 </div>
-                <Badge variant="outline" className={search.is_active ? "bg-green-500/20 text-green-400 border-green-500/30" : "bg-muted text-muted-foreground"}>
-                  {search.is_active ? "Active" : "Paused"}
-                </Badge>
-              </div>
-              <div className="flex items-center gap-3 text-xs text-muted-foreground mb-3">
-                <span>{search.zip_code}</span>
-                <span>{search.search_radius} mi</span>
-                <span>{listingCount} listings</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Updated {formatDistanceToNow(new Date(search.updated_at), { addSuffix: true })}</span>
-                <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => toggleMutation.mutate({ id: search.id, is_active: !search.is_active })}>
-                    {search.is_active ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-300" onClick={() => { if (confirm("Delete this search and all its listings?")) deleteMutation.mutate(search.id); }}>
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground mb-3">
+                  <span>{search.zip_code}</span>
+                  <span>{search.search_radius} mi</span>
+                  <span>{listingCount} listings</span>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
-    </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Updated {formatDistanceToNow(new Date(search.updated_at), { addSuffix: true })}</span>
+                  <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingSearch(search)}>
+                      <Pencil className="h-3 w-3" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => toggleMutation.mutate({ id: search.id, is_active: !search.is_active })}>
+                      {search.is_active ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-300" onClick={() => { if (confirm("Delete this search and all its listings?")) deleteMutation.mutate(search.id); }}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      <Dialog open={!!editingSearch} onOpenChange={(open) => { if (!open) setEditingSearch(null); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Edit Search</DialogTitle>
+          </DialogHeader>
+          {editingSearch && (
+            <SearchForm
+              editData={editingSearch}
+              onSaved={() => setEditingSearch(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

@@ -1,5 +1,6 @@
 import { ScrapedListing, SearchParams } from './types';
 import { withRetry, randomDelay } from '../utils/retry';
+import { extractVin } from '../utils/vin-extractor';
 
 // Hagerty Marketplace is a Next.js SSR app with Apollo GraphQL state.
 // Search URL: /marketplace/search?q={query}&type=auctions&forSale=true
@@ -189,6 +190,21 @@ export async function scrapeHagerty(params: SearchParams): Promise<ScrapedListin
         } catch {
           // skip
         }
+      }
+    }
+
+    // Extract VINs from detail pages
+    for (const listing of listings) {
+      if (!listing.url) continue;
+      try {
+        const vin = await extractVin(page, listing.url);
+        if (vin) {
+          listing.vin = vin;
+          console.log(`[Hagerty] Found VIN: ${vin} for ${listing.title}`);
+        }
+        await randomDelay(1000, 2000);
+      } catch {
+        // skip VIN extraction errors
       }
     }
 

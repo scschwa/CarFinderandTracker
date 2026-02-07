@@ -14,7 +14,7 @@ import {
 import { MarketStats } from "@/components/market-stats";
 import { VehicleCard } from "@/components/vehicle-card";
 import { VehicleTable } from "@/components/vehicle-table";
-import { Download, RefreshCw, LayoutGrid, List } from "lucide-react";
+import { Download, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function SearchResultsPage() {
@@ -170,6 +170,10 @@ export default function SearchResultsPage() {
             <SelectItem value="autotrader">Autotrader</SelectItem>
             <SelectItem value="bat">Bring a Trailer</SelectItem>
             <SelectItem value="carsandbids">Cars & Bids</SelectItem>
+            <SelectItem value="hemmings">Hemmings</SelectItem>
+            <SelectItem value="pcarmarket">PCARMARKET</SelectItem>
+            <SelectItem value="hagerty">Hagerty</SelectItem>
+            <SelectItem value="autohunter">AutoHunter</SelectItem>
           </SelectContent>
         </Select>
 
@@ -188,17 +192,17 @@ export default function SearchResultsPage() {
         <div className="ml-auto flex gap-1">
           <Button
             variant={viewMode === "grid" ? "secondary" : "ghost"}
-            size="icon"
+            size="sm"
             onClick={() => setViewMode("grid")}
           >
-            <LayoutGrid className="h-4 w-4" />
+            Tile
           </Button>
           <Button
             variant={viewMode === "table" ? "secondary" : "ghost"}
-            size="icon"
+            size="sm"
             onClick={() => setViewMode("table")}
           >
-            <List className="h-4 w-4" />
+            Listing
           </Button>
         </div>
       </div>

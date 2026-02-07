@@ -37,6 +37,7 @@ function formatPrice(cents: number | null) {
 
 const sourceLabels: Record<string, string> = {
   autotrader: "Autotrader", bat: "BaT", carsandbids: "Cars & Bids",
+  hemmings: "Hemmings", pcarmarket: "PCARMARKET", hagerty: "Hagerty", autohunter: "AutoHunter",
 };
 
 export function VehicleTable({ listings, searchId }: { listings: ListingRow[]; searchId?: string }) {
@@ -63,12 +64,12 @@ export function VehicleTable({ listings, searchId }: { listings: ListingRow[]; s
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-12"></TableHead>
-            <TableHead>Vehicle</TableHead>
+            <TableHead>Model</TableHead>
             <TableHead>Price</TableHead>
-            <TableHead>Location</TableHead>
             <TableHead>Source</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Link</TableHead>
+            <TableHead>VIN</TableHead>
             <TableHead className="w-24">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -85,29 +86,20 @@ export function VehicleTable({ listings, searchId }: { listings: ListingRow[]; s
             const title = [v.year, v.make, v.model, v.trim].filter(Boolean).join(" ");
             return (
               <TableRow key={listing.id}>
-                <TableCell>
-                  {listing.image_url ? (
-                    <img src={listing.image_url} alt={title} className="w-10 h-10 rounded object-cover" />
-                  ) : (
-                    <div className="w-10 h-10 rounded bg-muted" />
-                  )}
-                </TableCell>
-                <TableCell>
-                  <a href={listing.url} target="_blank" rel="noopener noreferrer" className="font-medium hover:text-blue-400 flex items-center gap-1">
-                    {title || "Unknown"} <ExternalLink className="h-3 w-3" />
-                  </a>
-                  {v.vin && (
-                    <a href={`/vehicle/${v.vin}`} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-blue-400">
-                      {v.vin}
-                    </a>
-                  )}
-                </TableCell>
+                <TableCell className="font-medium">{title || "Unknown"}</TableCell>
                 <TableCell className="font-semibold">
                   {listing.status === "sold" ? formatPrice(listing.sale_price) : formatPrice(listing.current_price)}
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">{listing.geography || "--"}</TableCell>
                 <TableCell className="text-sm">{sourceLabels[listing.source_site] || listing.source_site}</TableCell>
                 <TableCell><StatusBadge status={listing.status} /></TableCell>
+                <TableCell>
+                  <a href={listing.url} target="_blank" rel="noopener noreferrer" className="hover:text-blue-400">
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {v.vin && !v.vin.startsWith("UNKNOWN") ? v.vin : "--"}
+                </TableCell>
                 <TableCell>
                   <div className="flex gap-1">
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => favMutation.mutate(listing.id)}>

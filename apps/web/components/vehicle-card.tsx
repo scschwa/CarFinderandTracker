@@ -47,6 +47,10 @@ const sourceLabels: Record<string, string> = {
   autotrader: "Autotrader",
   bat: "BaT",
   carsandbids: "Cars & Bids",
+  hemmings: "Hemmings",
+  pcarmarket: "PCARMARKET",
+  hagerty: "Hagerty",
+  autohunter: "AutoHunter",
 };
 
 export function VehicleCard({ listing, searchId }: VehicleCardProps) {

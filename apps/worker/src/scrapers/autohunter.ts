@@ -1,5 +1,6 @@
 import { ScrapedListing, SearchParams } from './types';
 import { withRetry, randomDelay } from '../utils/retry';
+import { extractVin } from '../utils/vin-extractor';
 
 function buildSearchUrl(params: SearchParams): string {
   const query = `${params.make} ${params.model}${params.trim ? ' ' + params.trim : ''}`;
@@ -217,6 +218,21 @@ export async function scrapeAutohunter(params: SearchParams): Promise<ScrapedLis
         } catch {
           // skip
         }
+      }
+    }
+
+    // Extract VINs from detail pages
+    for (const listing of listings) {
+      if (!listing.url) continue;
+      try {
+        const vin = await extractVin(page, listing.url);
+        if (vin) {
+          listing.vin = vin;
+          console.log(`[AutoHunter] Found VIN: ${vin} for ${listing.title}`);
+        }
+        await randomDelay(1000, 2000);
+      } catch {
+        // skip VIN extraction errors
       }
     }
 

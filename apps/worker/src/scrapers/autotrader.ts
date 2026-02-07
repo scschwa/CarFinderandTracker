@@ -1,5 +1,6 @@
 import { ScrapedListing, SearchParams } from './types';
 import { withRetry, randomDelay } from '../utils/retry';
+import { extractVin } from '../utils/vin-extractor';
 
 // Autotrader uses Akamai Bot Manager — requires either:
 // 1. Bright Data Scraping Browser (recommended): set BRIGHT_DATA_BROWSER_WS
@@ -314,6 +315,21 @@ export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedLis
             break;
           }
         }
+      }
+    }
+
+    // Extract VINs from detail pages
+    for (const listing of listings) {
+      if (!listing.url) continue;
+      try {
+        const vin = await extractVin(page, listing.url);
+        if (vin) {
+          listing.vin = vin;
+          console.log(`[Autotrader] Found VIN: ${vin} for ${listing.title}`);
+        }
+        await randomDelay(1000, 2000);
+      } catch {
+        // skip VIN extraction errors
       }
     }
 
