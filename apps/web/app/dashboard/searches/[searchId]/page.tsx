@@ -62,7 +62,7 @@ export default function SearchResultsPage() {
       setTimeout(() => queryClient.invalidateQueries({ queryKey: ["search", searchId] }), 10000);
       setTimeout(() => queryClient.invalidateQueries({ queryKey: ["search", searchId] }), 30000);
       setTimeout(() => queryClient.invalidateQueries({ queryKey: ["search", searchId] }), 60000);
-    } catch (err) {
+    } catch {
       toast({
         title: "Connection error",
         description: "Could not reach the scraping worker. Check WORKER_URL configuration.",
