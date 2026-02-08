@@ -10,8 +10,9 @@ export type Database = {
           trim: string | null;
           year_min: number;
           year_max: number;
-          zip_code: string;
-          search_radius: number;
+          zip_code: string | null;
+          search_radius: number | null;
+          enabled_sites: string[];
           is_active: boolean;
           created_at: string;
           updated_at: string;
@@ -24,8 +25,9 @@ export type Database = {
           trim?: string | null;
           year_min: number;
           year_max: number;
-          zip_code: string;
-          search_radius?: number;
+          zip_code?: string | null;
+          search_radius?: number | null;
+          enabled_sites?: string[];
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;
@@ -38,8 +40,9 @@ export type Database = {
           trim?: string | null;
           year_min?: number;
           year_max?: number;
-          zip_code?: string;
-          search_radius?: number;
+          zip_code?: string | null;
+          search_radius?: number | null;
+          enabled_sites?: string[];
           is_active?: boolean;
           updated_at?: string;
         };

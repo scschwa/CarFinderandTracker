@@ -156,8 +156,8 @@ export default function SearchResultsPage() {
             {search.trim ? ` ${search.trim}` : ""}
           </h1>
           <p className="text-muted-foreground text-sm">
-            {search.year_min}&ndash;{search.year_max} &middot; {search.zip_code} &middot;{" "}
-            {search.search_radius} mi radius
+            {search.year_min}&ndash;{search.year_max} &middot;{" "}
+            {search.enabled_sites?.length || 7} sites
           </p>
         </div>
         <div className="flex gap-2">

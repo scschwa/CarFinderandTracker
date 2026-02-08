@@ -8,8 +8,7 @@ const createSearchSchema = z.object({
   trim: z.string().optional().nullable(),
   year_min: z.number().int().min(1900).max(2030),
   year_max: z.number().int().min(1900).max(2030),
-  zip_code: z.string().min(5).max(10),
-  search_radius: z.number().int().min(10).max(500).optional(),
+  enabled_sites: z.array(z.string()).min(1).optional(),
 });
 
 export async function GET() {

@@ -20,8 +20,7 @@ interface SavedSearch {
   trim: string | null;
   year_min: number;
   year_max: number;
-  zip_code: string;
-  search_radius: number;
+  enabled_sites: string[] | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -96,8 +95,7 @@ export function SearchList() {
                   </Badge>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-muted-foreground mb-3">
-                  <span>{search.zip_code}</span>
-                  <span>{search.search_radius} mi</span>
+                  <span>{search.enabled_sites?.length || 7} sites</span>
                   <span>{listingCount} listings</span>
                 </div>
                 <div className="flex items-center justify-between">

@@ -8,8 +8,7 @@ const updateSearchSchema = z.object({
   trim: z.string().nullable().optional(),
   year_min: z.number().int().min(1900).max(2030).optional(),
   year_max: z.number().int().min(1900).max(2030).optional(),
-  zip_code: z.string().min(5).max(10).optional(),
-  search_radius: z.number().int().min(10).max(500).optional(),
+  enabled_sites: z.array(z.string()).min(1).optional(),
   is_active: z.boolean().optional(),
 });
 

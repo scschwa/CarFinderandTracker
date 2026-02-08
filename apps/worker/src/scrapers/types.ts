@@ -17,6 +17,4 @@ export type SearchParams = {
   trim: string | null;
   year_min: number;
   year_max: number;
-  zip_code: string;
-  search_radius: number;
 };

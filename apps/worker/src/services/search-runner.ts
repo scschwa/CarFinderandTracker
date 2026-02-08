@@ -18,8 +18,7 @@ export async function runSearchScrape(search: {
   trim: string | null;
   year_min: number;
   year_max: number;
-  zip_code: string;
-  search_radius: number;
+  enabled_sites: string[] | null;
 }): Promise<void> {
   console.log(`\n[SearchRunner] Starting scrape for: ${search.make} ${search.model} (${search.id})`);
 
@@ -29,12 +28,10 @@ export async function runSearchScrape(search: {
     trim: search.trim,
     year_min: search.year_min,
     year_max: search.year_max,
-    zip_code: search.zip_code,
-    search_radius: search.search_radius,
   };
 
   const allListings: ScrapedListing[] = [];
-  const scrapers = [
+  const allScrapers = [
     { name: 'bat', fn: () => scrapeBaT(params) },
     { name: 'carsandbids', fn: () => scrapeCarsAndBids(params) },
     { name: 'autotrader', fn: () => scrapeAutotrader(params) },
@@ -43,6 +40,9 @@ export async function runSearchScrape(search: {
     { name: 'hagerty', fn: () => scrapeHagerty(params) },
     { name: 'autohunter', fn: () => scrapeAutohunter(params) },
   ];
+
+  const enabledSites = search.enabled_sites || ['bat', 'carsandbids', 'autotrader', 'hemmings', 'pcarmarket', 'hagerty', 'autohunter'];
+  const scrapers = allScrapers.filter(s => enabledSites.includes(s.name));
 
   // Mark scrape as running for frontend progress tracking
   await supabase.from('saved_searches').update({

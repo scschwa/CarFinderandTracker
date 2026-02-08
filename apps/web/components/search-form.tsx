@@ -14,7 +14,18 @@ import { Plus } from "lucide-react";
 
 const currentYear = new Date().getFullYear();
 const years = Array.from({ length: currentYear - 1989 }, (_, i) => currentYear + 1 - i);
-const radiusOptions = [25, 50, 100, 200, 500];
+
+const ALL_SITES = [
+  { key: "bat", label: "Bring a Trailer" },
+  { key: "carsandbids", label: "Cars & Bids" },
+  { key: "autotrader", label: "Autotrader" },
+  { key: "hemmings", label: "Hemmings" },
+  { key: "pcarmarket", label: "PCARMARKET" },
+  { key: "hagerty", label: "Hagerty" },
+  { key: "autohunter", label: "AutoHunter" },
+] as const;
+
+const ALL_SITE_KEYS = ALL_SITES.map(s => s.key);
 
 interface EditData {
   id: string;
@@ -23,8 +34,7 @@ interface EditData {
   trim: string | null;
   year_min: number;
   year_max: number;
-  zip_code: string;
-  search_radius: number;
+  enabled_sites: string[] | null;
 }
 
 interface SearchFormProps {
@@ -41,8 +51,8 @@ export function SearchForm({ editData, onSaved }: SearchFormProps) {
   const [form, setForm] = useState({
     make: "", model: "", trim: "",
     year_min: "2015", year_max: String(currentYear),
-    zip_code: "", search_radius: "100",
   });
+  const [enabledSites, setEnabledSites] = useState<string[]>([...ALL_SITE_KEYS]);
 
   useEffect(() => {
     if (editData) {
@@ -52,11 +62,20 @@ export function SearchForm({ editData, onSaved }: SearchFormProps) {
         trim: editData.trim || "",
         year_min: String(editData.year_min),
         year_max: String(editData.year_max),
-        zip_code: editData.zip_code,
-        search_radius: String(editData.search_radius),
       });
+      setEnabledSites(editData.enabled_sites || [...ALL_SITE_KEYS]);
     }
   }, [editData]);
+
+  const toggleSite = (key: string) => {
+    setEnabledSites(prev => {
+      if (prev.includes(key)) {
+        if (prev.length <= 1) return prev;
+        return prev.filter(s => s !== key);
+      }
+      return [...prev, key];
+    });
+  };
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -65,8 +84,7 @@ export function SearchForm({ editData, onSaved }: SearchFormProps) {
         trim: form.trim || null,
         year_min: parseInt(form.year_min),
         year_max: parseInt(form.year_max),
-        zip_code: form.zip_code,
-        search_radius: parseInt(form.search_radius),
+        enabled_sites: enabledSites,
       };
 
       const url = isEditing ? `/api/searches/${editData.id}` : "/api/searches";
@@ -89,7 +107,8 @@ export function SearchForm({ editData, onSaved }: SearchFormProps) {
         queryClient.invalidateQueries({ queryKey: ["search", editData.id] });
         onSaved?.();
       } else {
-        setForm({ make: "", model: "", trim: "", year_min: "2015", year_max: String(currentYear), zip_code: "", search_radius: "100" });
+        setForm({ make: "", model: "", trim: "", year_min: "2015", year_max: String(currentYear) });
+        setEnabledSites([...ALL_SITE_KEYS]);
         router.push(`/dashboard/searches/${data.id}`);
       }
     },
@@ -99,59 +118,70 @@ export function SearchForm({ editData, onSaved }: SearchFormProps) {
   const formContent = (
     <form
       onSubmit={(e) => { e.preventDefault(); setError(""); mutation.mutate(); }}
-      className="grid grid-cols-2 md:grid-cols-4 gap-4"
+      className="space-y-4"
     >
-      <div className="space-y-2">
-        <Label htmlFor="make">Make</Label>
-        <Input id="make" placeholder="e.g. Toyota" value={form.make} onChange={(e) => setForm({ ...form, make: e.target.value })} required />
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="make">Make</Label>
+          <Input id="make" placeholder="e.g. Toyota" value={form.make} onChange={(e) => setForm({ ...form, make: e.target.value })} required />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="model">Model</Label>
+          <Input id="model" placeholder="e.g. Camry" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} required />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="trim">Trim (optional)</Label>
+          <Input id="trim" placeholder="e.g. XSE" value={form.trim} onChange={(e) => setForm({ ...form, trim: e.target.value })} />
+        </div>
+        <div className="space-y-2">
+          <Label>Year Min</Label>
+          <Select value={form.year_min} onValueChange={(v) => setForm({ ...form, year_min: v })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {years.map((y) => (<SelectItem key={y} value={String(y)}>{y}</SelectItem>))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Year Max</Label>
+          <Select value={form.year_max} onValueChange={(v) => setForm({ ...form, year_max: v })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {years.map((y) => (<SelectItem key={y} value={String(y)}>{y}</SelectItem>))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-end">
+          <Button type="submit" className="w-full" disabled={mutation.isPending}>
+            {mutation.isPending
+              ? (isEditing ? "Saving..." : "Creating...")
+              : (isEditing ? "Save Changes" : "Create Search")}
+          </Button>
+        </div>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="model">Model</Label>
-        <Input id="model" placeholder="e.g. Camry" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} required />
+        <Label>Websites to search</Label>
+        <div className="flex flex-wrap gap-2">
+          {ALL_SITES.map(site => {
+            const isActive = enabledSites.includes(site.key);
+            return (
+              <button
+                key={site.key}
+                type="button"
+                onClick={() => toggleSite(site.key)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
+                  isActive
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+                }`}
+              >
+                {site.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
-      <div className="space-y-2">
-        <Label htmlFor="trim">Trim (optional)</Label>
-        <Input id="trim" placeholder="e.g. XSE" value={form.trim} onChange={(e) => setForm({ ...form, trim: e.target.value })} />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="zip">Zip Code</Label>
-        <Input id="zip" placeholder="e.g. 10001" value={form.zip_code} onChange={(e) => setForm({ ...form, zip_code: e.target.value })} required />
-      </div>
-      <div className="space-y-2">
-        <Label>Year Min</Label>
-        <Select value={form.year_min} onValueChange={(v) => setForm({ ...form, year_min: v })}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {years.map((y) => (<SelectItem key={y} value={String(y)}>{y}</SelectItem>))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="space-y-2">
-        <Label>Year Max</Label>
-        <Select value={form.year_max} onValueChange={(v) => setForm({ ...form, year_max: v })}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {years.map((y) => (<SelectItem key={y} value={String(y)}>{y}</SelectItem>))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="space-y-2">
-        <Label>Search Radius</Label>
-        <Select value={form.search_radius} onValueChange={(v) => setForm({ ...form, search_radius: v })}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {radiusOptions.map((r) => (<SelectItem key={r} value={String(r)}>{r} miles</SelectItem>))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="flex items-end">
-        <Button type="submit" className="w-full" disabled={mutation.isPending}>
-          {mutation.isPending
-            ? (isEditing ? "Saving..." : "Creating...")
-            : (isEditing ? "Save Changes" : "Create Search")}
-        </Button>
-      </div>
-      {error && <p className="col-span-full text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
     </form>
   );
 

@@ -10,9 +10,7 @@ function buildSearchUrl(params: SearchParams): string {
   const makeSlug = params.make.toLowerCase().replace(/\s+/g, '-');
   const modelSlug = params.model.toLowerCase().replace(/\s+/g, '-');
   return `https://www.autotrader.com/cars-for-sale/all-cars/${makeSlug}/${modelSlug}` +
-    `?zip=${params.zip_code}` +
-    `&searchRadius=${params.search_radius}` +
-    `&startYear=${params.year_min}` +
+    `?startYear=${params.year_min}` +
     `&endYear=${params.year_max}` +
     `&isNewSearch=true&marketExtension=include&showAccelerateBanner=false&sortBy=relevance&numRecords=25`;
 }
