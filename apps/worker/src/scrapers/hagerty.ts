@@ -105,12 +105,19 @@ export async function scrapeHagerty(params: SearchParams): Promise<ScrapedListin
           }
 
           // Title: Hagerty uses descriptive titles like "23k-Mile 1989 Ford F-150 XLT Lariat"
-          const title = await card
+          let title = await card
             .$eval(
               'h2, h3, h4, [class*="title"], [class*="Title"]',
               (el: Element) => el.textContent?.trim() || ''
             )
-            .catch(() => cardText.split('\n').find(line => line.trim().match(/\b(19|20)\d{2}\b/))?.trim() || '');
+            .catch(() => '');
+
+          // Fallback: find a line with a year, or use the card's text content
+          if (!title) {
+            const yearLine = cardText.split('\n').map(l => l.trim()).find(l => l.match(/\b(19|20)\d{2}\b/));
+            const firstLine = cardText.split('\n').map(l => l.trim()).find(l => l.length > 5);
+            title = yearLine || firstLine || cardText.trim().substring(0, 100);
+          }
 
           if (!title) continue;
 

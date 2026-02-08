@@ -46,31 +46,61 @@ export async function scrapeHemmings(params: SearchParams): Promise<ScrapedListi
 
     // Find and use the search input
     const searchInput = await page.$('input[type="search"], input[name="q"], input[placeholder*="earch"], input[class*="search"], #search-input');
+    let searchWorked = false;
+
     if (searchInput) {
       await searchInput.fill(query);
       await searchInput.press('Enter');
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
       await randomDelay(2000, 3000);
-      console.log(`[Hemmings] Search submitted, landed on: ${page.url()}`);
-    } else {
+
+      // Check if search actually navigated us somewhere
+      const currentUrl = page.url();
+      if (currentUrl !== 'https://www.hemmings.com/' && currentUrl !== 'https://www.hemmings.com') {
+        searchWorked = true;
+        console.log(`[Hemmings] Search submitted, landed on: ${currentUrl}`);
+      } else {
+        // Enter didn't navigate — try clicking a search/submit button
+        console.log(`[Hemmings] Search input Enter didn't navigate, trying submit button`);
+        const submitBtn = await page.$('button[type="submit"], button[class*="search"], [class*="search-btn"], [class*="SearchButton"]');
+        if (submitBtn) {
+          await submitBtn.click();
+          await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+          await randomDelay(2000, 3000);
+          const afterClickUrl = page.url();
+          if (afterClickUrl !== 'https://www.hemmings.com/' && afterClickUrl !== 'https://www.hemmings.com') {
+            searchWorked = true;
+            console.log(`[Hemmings] Submit button worked, landed on: ${afterClickUrl}`);
+          }
+        }
+      }
+    }
+
+    if (!searchWorked) {
       // Fallback: try direct URL patterns
+      console.log(`[Hemmings] Search bar didn't work, trying direct URLs`);
       const urlAttempts = [
         `https://www.hemmings.com/classifieds/cars/for-sale?q=${encodeURIComponent(query)}`,
         `https://www.hemmings.com/auctions?q=${encodeURIComponent(query)}`,
+        `https://www.hemmings.com/search?q=${encodeURIComponent(query)}`,
       ];
 
-      let found = false;
       for (const tryUrl of urlAttempts) {
-        await page.goto(tryUrl, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-        const title = await page.title();
-        if (!title.includes('404')) {
-          console.log(`[Hemmings] Using URL: ${tryUrl}`);
-          found = true;
-          break;
+        try {
+          await page.goto(tryUrl, { waitUntil: 'networkidle', timeout: 15000 });
+          const title = await page.title();
+          const currentUrl = page.url();
+          if (!title.includes('404') && currentUrl !== 'https://www.hemmings.com/' && currentUrl !== 'https://www.hemmings.com') {
+            console.log(`[Hemmings] Using URL: ${tryUrl} → ${currentUrl}`);
+            searchWorked = true;
+            break;
+          }
+        } catch {
+          // try next URL
         }
       }
 
-      if (!found) {
+      if (!searchWorked) {
         console.log(`[Hemmings] Could not find working search URL`);
         await browser.close();
         browser = null;
@@ -186,12 +216,18 @@ export async function scrapeHemmings(params: SearchParams): Promise<ScrapedListi
             continue;
           }
 
-          const title = await card
+          let title = await card
             .$eval(
               'h2, h3, h4, [class*="title"], .listing-title',
               (el: Element) => el.textContent?.trim() || ''
             )
             .catch(() => '');
+
+          // Fallback: use the card's own text content
+          if (!title) {
+            const firstLine = cardText.split('\n').map(l => l.trim()).find(l => l.length > 5);
+            title = firstLine || cardText.trim().substring(0, 100);
+          }
 
           if (!title) continue;
 

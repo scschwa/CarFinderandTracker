@@ -153,12 +153,18 @@ export async function scrapeAutohunter(params: SearchParams): Promise<ScrapedLis
             continue;
           }
 
-          const title = await card
+          let title = await card
             .$eval(
               'h2, h3, h4, [class*="title"], .listing-title, .vehicle-title',
               (el: Element) => el.textContent?.trim() || ''
             )
             .catch(() => '');
+
+          // Fallback: use the card's own text content
+          if (!title) {
+            const firstLine = cardText.split('\n').map(l => l.trim()).find(l => l.length > 5);
+            title = firstLine || cardText.trim().substring(0, 100);
+          }
 
           if (!title) continue;
 

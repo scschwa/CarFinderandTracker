@@ -308,9 +308,14 @@ export async function scrapeAutotrader(params: SearchParams): Promise<ScrapedLis
         if (pagesScraped < maxPages) {
           const nextButton = await page.$('button[aria-label="Next"], [data-cmp="nextPage"], a[aria-label="Next"]');
           if (nextButton) {
-            await nextButton.click();
-            await randomDelay(2000, 4000);
-            await page.waitForLoadState('networkidle').catch(() => {});
+            try {
+              await nextButton.click({ timeout: 5000 });
+              await randomDelay(2000, 4000);
+              await page.waitForLoadState('networkidle').catch(() => {});
+            } catch {
+              console.log(`[Autotrader] Pagination failed, continuing with ${listings.length} listings`);
+              break;
+            }
           } else {
             break;
           }
