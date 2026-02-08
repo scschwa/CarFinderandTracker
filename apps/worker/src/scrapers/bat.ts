@@ -1,25 +1,12 @@
 import { ScrapedListing, SearchParams } from './types';
 import { withRetry, randomDelay } from '../utils/retry';
 import { extractVins } from '../utils/vin-extractor';
+import { getAuctionResult, extractSalePrice, isSoldWithinThreeMonths } from '../utils/auction-helpers';
 
 function buildSearchUrl(params: SearchParams): string {
   const query = `${params.make} ${params.model}${params.trim ? ' ' + params.trim : ''}`;
   const encoded = encodeURIComponent(query);
   return `https://bringatrailer.com/search/?s=${encoded}`;
-}
-
-/** Check if card text indicates a completed/closed auction.
- *  Uses specific phrases to avoid false positives from generic words. */
-function isAuctionClosed(text: string): boolean {
-  const lower = text.toLowerCase();
-  return (
-    /sold\s+for\s+(?:usd\s+)?\$/.test(lower) ||
-    /bid\s+to\s+(?:usd\s+)?\$/.test(lower) ||
-    lower.includes('final bid') ||
-    lower.includes('no sale') ||
-    lower.includes('reserve not met') ||
-    lower.includes('auction ended')
-  );
 }
 
 export async function scrapeBaT(params: SearchParams): Promise<ScrapedListing[]> {
@@ -107,7 +94,12 @@ export async function scrapeBaT(params: SearchParams): Promise<ScrapedListing[]>
           });
 
           if (!href || !text || href === url) continue;
-          if (isAuctionClosed(text)) {
+          const auctionResult = getAuctionResult(text);
+          if (auctionResult === 'no-sale') {
+            skippedClosed++;
+            continue;
+          }
+          if (auctionResult === 'sold' && !isSoldWithinThreeMonths(text)) {
             skippedClosed++;
             continue;
           }
@@ -127,16 +119,19 @@ export async function scrapeBaT(params: SearchParams): Promise<ScrapedListing[]>
 
           if (listings.some(l => l.url === href)) continue;
 
+          const isSold = auctionResult === 'sold';
+          const salePrice = isSold ? (extractSalePrice(text) || price) : null;
+
           listings.push({
             vin: null,
             title,
-            price,
+            price: isSold ? (salePrice || price) : price,
             url: href,
             sourceSite: 'bat',
             location: '',
             mileage: null,
-            status: 'active',
-            salePrice: null,
+            status: isSold ? 'sold' : 'active',
+            salePrice,
             imageUrl: null,
           });
         } catch {
@@ -153,8 +148,13 @@ export async function scrapeBaT(params: SearchParams): Promise<ScrapedListing[]>
             (el: Element) => el.textContent || ''
           );
 
-          // Skip closed/completed auctions
-          if (isAuctionClosed(cardText)) {
+          // Determine auction status
+          const auctionResult = getAuctionResult(cardText);
+          if (auctionResult === 'no-sale') {
+            skippedClosed++;
+            continue;
+          }
+          if (auctionResult === 'sold' && !isSoldWithinThreeMonths(cardText)) {
             skippedClosed++;
             continue;
           }
@@ -217,16 +217,19 @@ export async function scrapeBaT(params: SearchParams): Promise<ScrapedListing[]>
 
           if (listings.some(l => l.url === listingUrl)) continue;
 
+          const isSold = auctionResult === 'sold';
+          const salePrice = isSold ? (extractSalePrice(cardText) || price) : null;
+
           listings.push({
             vin: null,
             title,
-            price,
+            price: isSold ? (salePrice || price) : price,
             url: listingUrl.startsWith('http') ? listingUrl : `https://bringatrailer.com${listingUrl}`,
             sourceSite: 'bat',
             location: '',
             mileage: null,
-            status: 'active',
-            salePrice: null,
+            status: isSold ? 'sold' : 'active',
+            salePrice,
             imageUrl: imageUrl || null,
           });
         } catch {
@@ -246,6 +249,8 @@ export async function scrapeBaT(params: SearchParams): Promise<ScrapedListing[]>
     if (browser) await browser.close().catch(() => {});
   }
 
-  console.log(`[BaT] Found ${listings.length} active listings (skipped ${skippedClosed} closed auctions)`);
+  const soldCount = listings.filter(l => l.status === 'sold').length;
+  const activeCount = listings.length - soldCount;
+  console.log(`[BaT] Found ${listings.length} listings (${activeCount} active, ${soldCount} sold, skipped ${skippedClosed} closed)`);
   return listings;
 }

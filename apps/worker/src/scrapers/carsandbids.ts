@@ -1,25 +1,11 @@
 import { ScrapedListing, SearchParams } from './types';
 import { withRetry, randomDelay } from '../utils/retry';
 import { extractVins } from '../utils/vin-extractor';
+import { getAuctionResult, extractSalePrice, isSoldWithinThreeMonths } from '../utils/auction-helpers';
 
 function buildSearchUrl(params: SearchParams): string {
   const query = `${params.make} ${params.model}${params.trim ? ' ' + params.trim : ''}`;
   return `https://carsandbids.com/search?q=${encodeURIComponent(query)}`;
-}
-
-/** Check if card text indicates a completed/closed auction.
- *  Uses specific phrases to avoid false positives from generic words
- *  like "sold" or "ended" appearing in non-status parts of the card. */
-function isAuctionClosed(text: string): boolean {
-  const lower = text.toLowerCase();
-  return (
-    /sold\s+for\s+(?:usd\s+)?\$/.test(lower) ||
-    /bid\s+to\s+(?:usd\s+)?\$/.test(lower) ||
-    lower.includes('final bid') ||
-    lower.includes('no sale') ||
-    lower.includes('reserve not met') ||
-    lower.includes('auction ended')
-  );
 }
 
 export async function scrapeCarsAndBids(params: SearchParams): Promise<ScrapedListing[]> {
@@ -86,8 +72,13 @@ export async function scrapeCarsAndBids(params: SearchParams): Promise<ScrapedLi
             (el: Element) => el.closest('div, li, article')?.textContent || el.textContent || ''
           );
 
-          // Skip closed/completed auctions
-          if (isAuctionClosed(parentText)) {
+          // Determine auction status
+          const auctionResult = getAuctionResult(parentText);
+          if (auctionResult === 'no-sale') {
+            skippedClosed++;
+            continue;
+          }
+          if (auctionResult === 'sold' && !isSoldWithinThreeMonths(parentText)) {
             skippedClosed++;
             continue;
           }
@@ -98,16 +89,19 @@ export async function scrapeCarsAndBids(params: SearchParams): Promise<ScrapedLi
             if (year < params.year_min || year > params.year_max) continue;
           }
 
+          const isSold = auctionResult === 'sold';
+          const salePrice = isSold ? extractSalePrice(parentText) : null;
+
           listings.push({
             vin: null,
             title: text,
-            price: 0,
+            price: salePrice || 0,
             url: href,
             sourceSite: 'carsandbids',
             location: '',
             mileage: null,
-            status: 'active',
-            salePrice: null,
+            status: isSold ? 'sold' : 'active',
+            salePrice,
             imageUrl: null,
           });
         } catch {
@@ -128,8 +122,13 @@ export async function scrapeCarsAndBids(params: SearchParams): Promise<ScrapedLi
             (el: Element) => el.textContent || ''
           );
 
-          // Skip closed/completed auctions
-          if (isAuctionClosed(cardText)) {
+          // Determine auction status
+          const auctionResult = getAuctionResult(cardText);
+          if (auctionResult === 'no-sale') {
+            skippedClosed++;
+            continue;
+          }
+          if (auctionResult === 'sold' && !isSoldWithinThreeMonths(cardText)) {
             skippedClosed++;
             continue;
           }
@@ -187,18 +186,21 @@ export async function scrapeCarsAndBids(params: SearchParams): Promise<ScrapedLi
             if (year < params.year_min || year > params.year_max) continue;
           }
 
+          const isSold = auctionResult === 'sold';
+          const salePrice = isSold ? (extractSalePrice(cardText) || price) : null;
+
           listings.push({
             vin: null,
             title: title || listingUrl.split('/').pop() || 'Unknown',
-            price,
+            price: isSold ? (salePrice || price) : price,
             url: listingUrl.startsWith('http')
               ? listingUrl
               : `https://carsandbids.com${listingUrl}`,
             sourceSite: 'carsandbids',
             location: '',
             mileage: null,
-            status: 'active',
-            salePrice: null,
+            status: isSold ? 'sold' : 'active',
+            salePrice,
             imageUrl: imageUrl || null,
           });
         } catch {
@@ -218,6 +220,8 @@ export async function scrapeCarsAndBids(params: SearchParams): Promise<ScrapedLi
     if (browser) await browser.close().catch(() => {});
   }
 
-  console.log(`[C&B] Found ${listings.length} active listings (skipped ${skippedClosed} closed auctions)`);
+  const soldCount = listings.filter(l => l.status === 'sold').length;
+  const activeCount = listings.length - soldCount;
+  console.log(`[C&B] Found ${listings.length} listings (${activeCount} active, ${soldCount} sold, skipped ${skippedClosed} closed)`);
   return listings;
 }
