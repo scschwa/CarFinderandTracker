@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { VehicleCard } from "@/components/vehicle-card";
 import { VehicleTable } from "@/components/vehicle-table";
 import { Download, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ScrapeProgress } from "@/components/scrape-progress";
 
 export default function SearchResultsPage() {
   const params = useParams();
@@ -28,6 +29,7 @@ export default function SearchResultsPage() {
   const [sourceFilter, setSourceFilter] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
   const [isTriggering, setIsTriggering] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["search", searchId],
@@ -37,6 +39,35 @@ export default function SearchResultsPage() {
       return res.json();
     },
   });
+
+  const scrapeStatus = data?.search?.scrape_status;
+
+  // Poll every 3 seconds while scrape is running
+  useEffect(() => {
+    if (scrapeStatus === "running") {
+      if (!pollRef.current) {
+        pollRef.current = setInterval(() => {
+          queryClient.invalidateQueries({ queryKey: ["search", searchId] });
+        }, 3000);
+      }
+    } else {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+        // Final refresh when scrape completes
+        if (scrapeStatus === "complete") {
+          queryClient.invalidateQueries({ queryKey: ["search", searchId] });
+        }
+      }
+    }
+
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [scrapeStatus, searchId, queryClient]);
 
   const handleTriggerScrape = async () => {
     setIsTriggering(true);
@@ -55,13 +86,11 @@ export default function SearchResultsPage() {
 
       toast({
         title: "Scrape started",
-        description: "Fetching new listings in the background. Results will appear shortly.",
+        description: "Fetching new listings in the background.",
       });
 
-      // Refetch data after a delay to pick up new results
-      setTimeout(() => queryClient.invalidateQueries({ queryKey: ["search", searchId] }), 10000);
-      setTimeout(() => queryClient.invalidateQueries({ queryKey: ["search", searchId] }), 30000);
-      setTimeout(() => queryClient.invalidateQueries({ queryKey: ["search", searchId] }), 60000);
+      // Kick off an initial poll to pick up 'running' status
+      setTimeout(() => queryClient.invalidateQueries({ queryKey: ["search", searchId] }), 2000);
     } catch {
       toast({
         title: "Connection error",
@@ -132,8 +161,8 @@ export default function SearchResultsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleTriggerScrape} disabled={isTriggering}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${isTriggering ? "animate-spin" : ""}`} />
+          <Button variant="outline" size="sm" onClick={handleTriggerScrape} disabled={isTriggering || scrapeStatus === "running"}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isTriggering || scrapeStatus === "running" ? "animate-spin" : ""}`} />
             Refresh
           </Button>
           <a href={`/api/searches/${searchId}/export`}>
@@ -146,6 +175,13 @@ export default function SearchResultsPage() {
       </div>
 
       <MarketStats listings={listings} />
+
+      <ScrapeProgress
+        status={search.scrape_status}
+        currentSite={search.scrape_current_site}
+        step={search.scrape_step || 0}
+        totalSteps={search.scrape_total_steps || 0}
+      />
 
       <div className="flex flex-wrap items-center gap-3">
         <Select value={statusFilter} onValueChange={setStatusFilter}>

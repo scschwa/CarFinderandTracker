@@ -110,6 +110,15 @@ export async function scrapeHemmings(params: SearchParams): Promise<ScrapedListi
       await randomDelay(2000, 3000);
     }
 
+    // Check for Cloudflare challenge page
+    const cfCheck = await page.evaluate(() => document.body?.innerText?.substring(0, 500) || '');
+    if (cfCheck.includes('Just a moment') || cfCheck.includes('Checking your browser') || cfCheck.includes('cf-browser-verification')) {
+      console.log(`[Hemmings] Cloudflare challenge detected — cannot bypass without anti-bot service. Skipping.`);
+      await browser.close();
+      browser = null;
+      return [];
+    }
+
     // Try multiple selectors for listing cards
     const selectorStrategies = [
       '.auction-card',

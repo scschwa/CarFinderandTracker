@@ -43,9 +43,11 @@ export async function scrapeAutohunter(params: SearchParams): Promise<ScrapedLis
     const page = await context.newPage();
 
     await withRetry(async () => {
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     });
 
+    // Wait for JS rendering with a shorter networkidle timeout
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
     await randomDelay(2000, 3000);
 
     // Try multiple selectors for auction listing cards
@@ -64,7 +66,14 @@ export async function scrapeAutohunter(params: SearchParams): Promise<ScrapedLis
     let usedSelector = '';
 
     for (const selector of selectorStrategies) {
-      await page.waitForSelector(selector, { timeout: 5000 }).catch(() => {});
+      // Try without waiting first (content may already be loaded)
+      cards = await page.$$(selector);
+      if (cards.length > 0) {
+        usedSelector = selector;
+        break;
+      }
+      // Short wait as fallback
+      await page.waitForSelector(selector, { timeout: 2000 }).catch(() => {});
       cards = await page.$$(selector);
       if (cards.length > 0) {
         usedSelector = selector;
@@ -175,11 +184,13 @@ export async function scrapeAutohunter(params: SearchParams): Promise<ScrapedLis
           } else {
             listingUrl = await card
               .$eval(
-                'a[href*="/auction/"], a[href*="/lot/"], a',
+                'a[href*="/auction/"], a[href*="/lot/"], a[href*="/vehicle/"]',
                 (el: Element) => (el as HTMLAnchorElement).href
               )
               .catch(() => '');
           }
+
+          if (!listingUrl || listingUrl === 'https://www.autohunter.com' || listingUrl === 'https://www.autohunter.com/') continue;
 
           const priceText = await card
             .$eval(

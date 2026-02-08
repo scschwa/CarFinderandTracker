@@ -173,9 +173,11 @@ export async function scrapePcarmarket(params: SearchParams): Promise<ScrapedLis
             listingUrl = await card.evaluate((el: Element) => (el as HTMLAnchorElement).href);
           } else {
             listingUrl = await card
-              .$eval('a[href*="/auction/"], a', (el: Element) => (el as HTMLAnchorElement).href)
+              .$eval('a[href*="/auction/"], a[href*="/listing/"], a[href*="/vehicle/"]', (el: Element) => (el as HTMLAnchorElement).href)
               .catch(() => '');
           }
+
+          if (!listingUrl || listingUrl === 'https://www.pcarmarket.com' || listingUrl === 'https://www.pcarmarket.com/') continue;
 
           const priceText = await card
             .$eval(

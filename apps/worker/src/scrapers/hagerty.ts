@@ -28,6 +28,7 @@ export async function scrapeHagerty(params: SearchParams): Promise<ScrapedListin
 
   const listings: ScrapedListing[] = [];
   let skippedClosed = 0;
+  let skippedYear = 0;
 
   let browser;
   try {
@@ -129,11 +130,13 @@ export async function scrapeHagerty(params: SearchParams): Promise<ScrapedListin
           } else {
             listingUrl = await card
               .$eval(
-                'a[href*="/marketplace/auction/"], a',
+                'a[href*="/marketplace/auction/"], a[href*="/marketplace/"]',
                 (el: Element) => (el as HTMLAnchorElement).href
               )
               .catch(() => '');
           }
+
+          if (!listingUrl || listingUrl === 'https://www.hagerty.com' || listingUrl === 'https://www.hagerty.com/') continue;
 
           // Price / bid — Hagerty shows "Bid $X,XXX"
           const priceText = await card
@@ -174,7 +177,7 @@ export async function scrapeHagerty(params: SearchParams): Promise<ScrapedListin
           const yearMatch = title.match(/\b(19|20)\d{2}\b/);
           if (yearMatch) {
             const year = parseInt(yearMatch[0]);
-            if (year < params.year_min || year > params.year_max) continue;
+            if (year < params.year_min || year > params.year_max) { skippedYear++; continue; }
           }
 
           if (listings.some(l => l.url === listingUrl)) continue;
@@ -208,6 +211,6 @@ export async function scrapeHagerty(params: SearchParams): Promise<ScrapedListin
     if (browser) await browser.close().catch(() => {});
   }
 
-  console.log(`[Hagerty] Found ${listings.length} active listings (skipped ${skippedClosed} closed auctions)`);
+  console.log(`[Hagerty] Found ${listings.length} active listings (skipped ${skippedClosed} closed, ${skippedYear} outside year range ${params.year_min}-${params.year_max})`);
   return listings;
 }

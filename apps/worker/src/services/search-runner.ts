@@ -44,7 +44,24 @@ export async function runSearchScrape(search: {
     { name: 'autohunter', fn: () => scrapeAutohunter(params) },
   ];
 
-  for (const scraper of scrapers) {
+  // Mark scrape as running for frontend progress tracking
+  await supabase.from('saved_searches').update({
+    scrape_status: 'running',
+    scrape_step: 0,
+    scrape_total_steps: scrapers.length,
+    scrape_current_site: null,
+    scrape_started_at: new Date().toISOString(),
+  }).eq('id', search.id);
+
+  for (let i = 0; i < scrapers.length; i++) {
+    const scraper = scrapers[i];
+
+    // Update progress: which scraper is currently running
+    await supabase.from('saved_searches').update({
+      scrape_current_site: scraper.name,
+      scrape_step: i,
+    }).eq('id', search.id);
+
     const start = Date.now();
     let status = 'success';
     let listingsFound = 0;
@@ -286,4 +303,11 @@ export async function runSearchScrape(search: {
   });
 
   console.log(`[SearchRunner] Completed scrape for ${search.make} ${search.model}: ${allListings.length} total listings`);
+
+  // Mark scrape as complete for frontend progress tracking
+  await supabase.from('saved_searches').update({
+    scrape_status: 'complete',
+    scrape_current_site: null,
+    scrape_step: scrapers.length,
+  }).eq('id', search.id);
 }
