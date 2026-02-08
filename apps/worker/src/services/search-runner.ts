@@ -10,6 +10,7 @@ import { scrapeAutohunter } from '../scrapers/autohunter';
 import { recordPrice, getPreviousPrice } from './price-recorder';
 import { detectDelistedListings, detectCrossListings } from './vehicle-tracker';
 import { sendNotifications } from './notifier';
+import { geminiFallbackSearch } from '../scrapers/gemini-fallback';
 
 export async function runSearchScrape(search: {
   id: string;
@@ -88,6 +89,49 @@ export async function runSearchScrape(search: {
       error_message: errorMessage,
       duration_ms: durationMs,
     });
+  }
+
+  // Gemini AI fallback: if fewer than 5 listings found, use AI to search sites that returned 0
+  if (process.env.GEMINI_API_KEY && allListings.length < 5) {
+    const sitesWithResults: Set<string> = new Set(allListings.map(l => l.sourceSite));
+    const sitesNeedingFallback = enabledSites.filter(s => !sitesWithResults.has(s));
+
+    if (sitesNeedingFallback.length > 0) {
+      // Update progress to show AI fallback step
+      await supabase.from('saved_searches').update({
+        scrape_total_steps: scrapers.length + 1,
+        scrape_step: scrapers.length,
+        scrape_current_site: 'ai-fallback',
+      }).eq('id', search.id);
+
+      const fallbackStart = Date.now();
+      let fallbackStatus = 'success';
+      let fallbackCount = 0;
+      let fallbackError: string | null = null;
+
+      try {
+        const existingUrls = new Set(allListings.map(l => l.url));
+        const fallbackResults = await geminiFallbackSearch(params, sitesNeedingFallback);
+
+        // Deduplicate against existing listings by URL
+        const newResults = fallbackResults.filter(r => !existingUrls.has(r.url));
+        allListings.push(...newResults);
+        fallbackCount = newResults.length;
+      } catch (err) {
+        fallbackStatus = 'error';
+        fallbackError = err instanceof Error ? err.message : String(err);
+        console.error('[SearchRunner] Gemini fallback error:', fallbackError);
+      }
+
+      await supabase.from('scrape_log').insert({
+        search_id: search.id,
+        source_site: 'ai-fallback',
+        status: fallbackStatus,
+        listings_found: fallbackCount,
+        error_message: fallbackError,
+        duration_ms: Date.now() - fallbackStart,
+      });
+    }
   }
 
   // Process scraped listings

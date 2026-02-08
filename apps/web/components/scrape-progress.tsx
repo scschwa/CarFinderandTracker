@@ -8,6 +8,7 @@ const siteDisplayNames: Record<string, string> = {
   pcarmarket: "PCARMARKET",
   hagerty: "Hagerty",
   autohunter: "AutoHunter",
+  "ai-fallback": "AI Search",
 };
 
 interface ScrapeProgressProps {
