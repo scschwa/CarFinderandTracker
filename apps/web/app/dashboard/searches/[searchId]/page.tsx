@@ -210,6 +210,7 @@ export default function SearchResultsPage() {
             <SelectItem value="pcarmarket">PCARMARKET</SelectItem>
             <SelectItem value="hagerty">Hagerty</SelectItem>
             <SelectItem value="autohunter">AutoHunter</SelectItem>
+            <SelectItem value="autotempest">AutoTempest</SelectItem>
           </SelectContent>
         </Select>
 

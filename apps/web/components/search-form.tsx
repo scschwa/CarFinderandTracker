@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,52 @@ import { Plus } from "lucide-react";
 
 const currentYear = new Date().getFullYear();
 const years = Array.from({ length: currentYear - 1989 }, (_, i) => currentYear + 1 - i);
+
+const MAKES_AND_MODELS: Record<string, string[]> = {
+  "Acura": ["Integra", "NSX", "RSX", "TL", "TLX", "TSX", "MDX", "RDX"],
+  "Alfa Romeo": ["4C", "Giulia", "Stelvio", "GTV", "Spider"],
+  "Aston Martin": ["DB9", "DB11", "DBS", "V8 Vantage", "Vanquish", "Rapide"],
+  "Audi": ["A3", "A4", "A5", "A6", "A7", "A8", "Q5", "Q7", "Q8", "R8", "RS3", "RS4", "RS5", "RS6", "RS7", "S3", "S4", "S5", "S6", "TT", "e-tron GT"],
+  "BMW": ["1 Series", "2 Series", "3 Series", "4 Series", "5 Series", "6 Series", "7 Series", "8 Series", "M2", "M3", "M4", "M5", "M6", "M8", "X1", "X3", "X5", "X6", "X7", "Z3", "Z4", "i4", "iX", "M340i", "M240i", "M550i"],
+  "Buick": ["Grand National", "GNX", "Riviera", "Regal"],
+  "Cadillac": ["ATS", "CT4", "CT5", "CTS", "CTS-V", "Escalade", "STS", "XLR"],
+  "Chevrolet": ["Camaro", "Corvette", "C10", "Chevelle", "Impala", "Nova", "El Camino", "Blazer", "Tahoe", "Suburban", "Silverado", "Colorado", "SS", "Monte Carlo"],
+  "Chrysler": ["300", "Crossfire"],
+  "Dodge": ["Challenger", "Charger", "Viper", "Durango", "Dart", "Demon"],
+  "Ferrari": ["348", "355", "360", "430", "458", "488", "F12", "812", "California", "Roma", "Portofino", "SF90", "296"],
+  "Fiat": ["124 Spider", "500 Abarth"],
+  "Ford": ["Bronco", "F-150", "F-250", "F-100", "Mustang", "GT", "Raptor", "Explorer", "Expedition", "Ranger", "Maverick", "Thunderbird", "Galaxie", "Fairlane"],
+  "Genesis": ["G70", "G80", "G90", "GV70", "GV80"],
+  "GMC": ["Sierra", "Yukon", "Canyon", "Jimmy", "Typhoon"],
+  "Honda": ["Accord", "Civic", "CR-V", "S2000", "NSX", "Prelude", "Integra", "Fit", "HR-V", "Pilot"],
+  "Hyundai": ["Elantra N", "Ioniq 5", "Ioniq 6", "Kona N", "Veloster N", "Genesis Coupe"],
+  "Infiniti": ["G35", "G37", "Q50", "Q60"],
+  "Jaguar": ["E-Type", "F-Type", "XJ", "XK", "XKR", "XE", "XF"],
+  "Jeep": ["Wrangler", "Grand Cherokee", "Cherokee", "Gladiator", "CJ"],
+  "Kia": ["Stinger", "EV6"],
+  "Lamborghini": ["Aventador", "Diablo", "Gallardo", "Huracan", "Murcielago", "Urus", "Countach"],
+  "Land Rover": ["Defender", "Range Rover", "Range Rover Sport", "Discovery"],
+  "Lexus": ["GS", "GX", "IS", "LC", "LFA", "LS", "LX", "RC", "RC F", "SC"],
+  "Lincoln": ["Continental", "Navigator"],
+  "Lotus": ["Elise", "Evora", "Exige", "Emira", "Esprit"],
+  "Maserati": ["GranTurismo", "Ghibli", "Levante", "Quattroporte", "MC20"],
+  "Mazda": ["MX-5 Miata", "RX-7", "RX-8", "Mazda3", "Mazda6", "CX-5", "CX-9"],
+  "McLaren": ["570S", "600LT", "620R", "650S", "675LT", "720S", "765LT", "P1", "Artura"],
+  "Mercedes-Benz": ["A-Class", "C-Class", "E-Class", "S-Class", "G-Class", "GLE", "GLS", "AMG GT", "CLA", "CLS", "GLA", "GLB", "GLC", "SL", "SLC", "SLK", "CLK", "ML"],
+  "Mini": ["Cooper", "Cooper S", "John Cooper Works", "Countryman"],
+  "Mitsubishi": ["Lancer Evolution", "Eclipse", "3000GT"],
+  "Nissan": ["350Z", "370Z", "Z", "GT-R", "Skyline", "Silvia", "240SX", "300ZX", "Frontier", "Pathfinder", "Titan"],
+  "Oldsmobile": ["442", "Cutlass"],
+  "Pontiac": ["Firebird", "Trans Am", "GTO", "G8"],
+  "Porsche": ["911", "718 Boxster", "718 Cayman", "Cayenne", "Macan", "Panamera", "Taycan", "928", "944", "968", "356", "Carrera GT"],
+  "Ram": ["1500", "2500", "3500", "TRX"],
+  "Rivian": ["R1T", "R1S"],
+  "Subaru": ["BRZ", "Impreza", "WRX", "STI", "Outback", "Forester", "Crosstrek"],
+  "Tesla": ["Model 3", "Model S", "Model X", "Model Y", "Cybertruck", "Roadster"],
+  "Toyota": ["4Runner", "Camry", "Celica", "Corolla", "GR86", "GR Corolla", "GR Supra", "Highlander", "Land Cruiser", "MR2", "RAV4", "Sequoia", "Supra", "Tacoma", "Tundra", "FJ Cruiser"],
+  "Volkswagen": ["Golf", "Golf R", "GTI", "Jetta", "Passat", "Tiguan", "Atlas", "ID.4", "Beetle", "Bus", "Corrado"],
+  "Volvo": ["240", "P1800", "S60", "V60", "XC40", "XC60", "XC90"],
+};
 
 const ALL_SITES = [
   { key: "bat", label: "Bring a Trailer" },
@@ -67,6 +113,15 @@ export function SearchForm({ editData, onSaved }: SearchFormProps) {
       setEnabledSites(editData.enabled_sites || [...ALL_SITE_KEYS]);
     }
   }, [editData]);
+
+  const makeNames = Object.keys(MAKES_AND_MODELS);
+
+  const filteredModels = useMemo(() => {
+    const typed = form.make.trim().toLowerCase();
+    if (!typed) return [];
+    const match = makeNames.find(m => m.toLowerCase() === typed);
+    return match ? MAKES_AND_MODELS[match] : [];
+  }, [form.make]);
 
   const toggleSite = (key: string) => {
     setEnabledSites(prev => {
@@ -124,11 +179,11 @@ export function SearchForm({ editData, onSaved }: SearchFormProps) {
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label htmlFor="make">Make</Label>
-          <Input id="make" placeholder="e.g. Toyota" value={form.make} onChange={(e) => setForm({ ...form, make: e.target.value })} required />
+          <Input id="make" list="makes-list" placeholder="e.g. Toyota" value={form.make} onChange={(e) => setForm({ ...form, make: e.target.value })} required />
         </div>
         <div className="space-y-2">
           <Label htmlFor="model">Model</Label>
-          <Input id="model" placeholder="e.g. Camry" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} required />
+          <Input id="model" list="models-list" placeholder="e.g. Camry" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} required />
         </div>
         <div className="space-y-2">
           <Label htmlFor="trim">Trim (optional)</Label>
@@ -183,6 +238,12 @@ export function SearchForm({ editData, onSaved }: SearchFormProps) {
         </div>
       </div>
       {error && <p className="text-sm text-red-400">{error}</p>}
+      <datalist id="makes-list">
+        {makeNames.map(m => <option key={m} value={m} />)}
+      </datalist>
+      <datalist id="models-list">
+        {filteredModels.map(m => <option key={m} value={m} />)}
+      </datalist>
     </form>
   );
 
