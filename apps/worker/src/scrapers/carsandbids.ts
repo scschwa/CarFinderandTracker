@@ -13,8 +13,8 @@ function buildSearchUrl(params: SearchParams): string {
 function isAuctionClosed(text: string): boolean {
   const lower = text.toLowerCase();
   return (
-    /sold\s+for\s+\$/.test(lower) ||
-    /bid\s+to\s+\$/.test(lower) ||
+    /sold\s+for\s+(?:usd\s+)?\$/.test(lower) ||
+    /bid\s+to\s+(?:usd\s+)?\$/.test(lower) ||
     lower.includes('final bid') ||
     lower.includes('no sale') ||
     lower.includes('reserve not met') ||
