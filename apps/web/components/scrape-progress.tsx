@@ -8,6 +8,7 @@ const siteDisplayNames: Record<string, string> = {
   pcarmarket: "PCARMARKET",
   hagerty: "Hagerty",
   autohunter: "AutoHunter",
+  autotempest: "AutoTempest",
   "ai-fallback": "AI Search",
 };
 

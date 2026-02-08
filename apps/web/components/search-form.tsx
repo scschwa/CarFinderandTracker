@@ -23,6 +23,7 @@ const ALL_SITES = [
   { key: "pcarmarket", label: "PCARMARKET" },
   { key: "hagerty", label: "Hagerty" },
   { key: "autohunter", label: "AutoHunter" },
+  { key: "autotempest", label: "AutoTempest" },
 ] as const;
 
 const ALL_SITE_KEYS = ALL_SITES.map(s => s.key);

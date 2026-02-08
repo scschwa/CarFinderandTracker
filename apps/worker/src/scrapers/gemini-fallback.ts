@@ -9,6 +9,7 @@ const SITE_DOMAINS: Record<string, string> = {
   pcarmarket: 'pcarmarket.com',
   hagerty: 'hagerty.com',
   autohunter: 'autohunter.com',
+  autotempest: 'autotempest.com',
 };
 
 // Delay helper to stay under 15 RPM on free tier

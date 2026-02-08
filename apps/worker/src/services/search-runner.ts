@@ -7,6 +7,7 @@ import { scrapeHemmings } from '../scrapers/hemmings';
 import { scrapePcarmarket } from '../scrapers/pcarmarket';
 import { scrapeHagerty } from '../scrapers/hagerty';
 import { scrapeAutohunter } from '../scrapers/autohunter';
+import { scrapeAutotempest } from '../scrapers/autotempest';
 import { recordPrice, getPreviousPrice } from './price-recorder';
 import { detectDelistedListings, detectCrossListings } from './vehicle-tracker';
 import { sendNotifications } from './notifier';
@@ -40,9 +41,10 @@ export async function runSearchScrape(search: {
     { name: 'pcarmarket', fn: () => scrapePcarmarket(params) },
     { name: 'hagerty', fn: () => scrapeHagerty(params) },
     { name: 'autohunter', fn: () => scrapeAutohunter(params) },
+    { name: 'autotempest', fn: () => scrapeAutotempest(params) },
   ];
 
-  const enabledSites = search.enabled_sites || ['bat', 'carsandbids', 'autotrader', 'hemmings', 'pcarmarket', 'hagerty', 'autohunter'];
+  const enabledSites = search.enabled_sites || ['bat', 'carsandbids', 'autotrader', 'hemmings', 'pcarmarket', 'hagerty', 'autohunter', 'autotempest'];
   const scrapers = allScrapers.filter(s => enabledSites.includes(s.name));
 
   // Mark scrape as running for frontend progress tracking

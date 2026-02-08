@@ -3,7 +3,7 @@ export type ScrapedListing = {
   title: string;
   price: number; // in cents
   url: string;
-  sourceSite: 'autotrader' | 'bat' | 'carsandbids' | 'hemmings' | 'pcarmarket' | 'hagerty' | 'autohunter';
+  sourceSite: 'autotrader' | 'bat' | 'carsandbids' | 'hemmings' | 'pcarmarket' | 'hagerty' | 'autohunter' | 'autotempest';
   location: string;
   mileage: number | null;
   status: 'active' | 'sold';
